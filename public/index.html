@@ -1,0 +1,661 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Model Proxy Tester</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 2rem auto; }
+    label { display:block; margin-top: .75rem }
+    textarea { width:100%; height:120px }
+    pre { background:#f6f8fa; padding:1rem; overflow:auto }
+    .row { display:flex; gap:1rem }
+    .col { flex:1 }
+    
+    .tabs { display:flex; border-bottom: 1px solid #ddd; margin-bottom: 1rem }
+    .tab { padding: 0.5rem 1rem; cursor: pointer; border: none; background: none }
+    .tab.active { background: #007acc; color: white }
+    .tab-content { display: none }
+    .tab-content.active { display: block }
+    
+    #simpleChat { max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem }
+    .message { margin-bottom: 0.5rem; padding: 0.25rem }
+    .user { color: #0066cc; font-weight: bold }
+    .assistant { color: #006600 }
+    .error { color: #cc0000; background: #ffe6e6; padding: 0.5rem; border-radius: 4px }
+    .loading { color: #666; font-style: italic }
+    
+    .model-status { font-size: 0.8em; margin-left: 0.5rem }
+    .working { color: #006600 }
+    .error-status { color: #cc0000 }
+    
+    .clear-btn { background: #ff6b6b; color: white; border: none; padding: 0.25rem 0.5rem; margin-left: 0.5rem; border-radius: 3px; cursor: pointer }
+    .test-btn { background: #4ecdc4; color: white; border: none; padding: 0.25rem 0.5rem; margin-left: 0.5rem; border-radius: 3px; cursor: pointer }
+    .save-btn { background: #51cf66; color: white; border: none; padding: 0.25rem 0.5rem; margin-left: 0.5rem; border-radius: 3px; cursor: pointer }
+    .load-btn { background: #339af0; color: white; border: none; padding: 0.25rem 0.5rem; margin-left: 0.5rem; border-radius: 3px; cursor: pointer }
+    
+    .history-panel { margin: 1rem 0; padding: 1rem; background: #f8f9fa; border-radius: 4px; }
+    .history-item { padding: 0.5rem; margin: 0.25rem 0; background: white; border-radius: 3px; display: flex; align-items: center; justify-content: space-between; }
+    .history-item:hover { background: #e9ecef; }
+    .history-actions { display: flex; gap: 0.5rem; }
+    .history-actions button { padding: 0.25rem 0.5rem; border: none; border-radius: 3px; cursor: pointer; font-size: 0.8rem; }
+    .delete-btn { background: #ff6b6b; color: white; }
+    .load-history-btn { background: #339af0; color: white; }
+    
+    .history-sidebar { position: fixed; right: 0; top: 0; width: 350px; height: 100vh; background: white; box-shadow: -2px 0 10px rgba(0,0,0,0.1); transform: translateX(100%); transition: transform 0.3s ease; z-index: 1000; overflow-y: auto; }
+    .history-sidebar.open { transform: translateX(0); }
+    .history-sidebar-header { padding: 1rem; background: #007acc; color: white; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; }
+    .history-sidebar-content { padding: 1rem; }
+    .history-toggle-btn { position: fixed; right: 20px; top: 20px; z-index: 999; background: #007acc; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,122,204,0.3); font-weight: 600; transition: all 0.3s ease; }
+    .history-toggle-btn:hover { background: #005a9e; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,122,204,0.4); }
+    .close-sidebar { background: transparent; border: none; color: white; font-size: 1.8rem; cursor: pointer; padding: 0; line-height: 1; }
+    .close-sidebar:hover { opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <!-- History Toggle Button -->
+  <button class="history-toggle-btn" id="historyToggleBtn">📂 Історія</button>
+  
+  <!-- History Sidebar -->
+  <div class="history-sidebar" id="historySidebar">
+    <div class="history-sidebar-header">
+      <h3 style="margin: 0;">💾 Збережені розмови</h3>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <button onclick="saveCurrentChat()" style="background: #28a745; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">
+          ➕ Зберегти поточну
+        </button>
+        <button class="close-sidebar" id="closeSidebar">×</button>
+      </div>
+    </div>
+    <div class="history-sidebar-content">
+      <div id="sidebarHistoryList"></div>
+    </div>
+  </div>
+  
+  <h1>Model Proxy Tester</h1>
+  <p>Send a chat or completion request to the local proxy.</p>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('advanced')">Advanced</button>
+    <button class="tab" onclick="showTab('simple')">Simple Chat</button>
+    <button class="tab" onclick="showTab('tools')">🛠️ Code Generator</button>
+  </div>
+
+  <div id="advanced-tab" class="tab-content active">
+
+  <label>Model ID
+                <select id="model" required>
+              <option value="openai/gpt-4o-mini">openai/gpt-4o-mini</option>
+              <option value="openai/gpt-4o">openai/gpt-4o</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="gpt-4o">gpt-4o</option>
+              <option value="microsoft/Phi-3.5-mini-instruct">microsoft/Phi-3.5-mini-instruct</option>
+              <option value="microsoft/Phi-3-mini-4k-instruct">microsoft/Phi-3-mini-4k-instruct</option>
+              <option value="Phi-3.5-mini-instruct">Phi-3.5-mini-instruct</option>
+              <option value="Phi-3-mini-4k-instruct">Phi-3-mini-4k-instruct</option>
+              <option value="Phi-3-medium-4k-instruct">Phi-3-medium-4k-instruct</option>
+              <option value="microsoft/Phi-3.5-MoE-instruct">microsoft/Phi-3.5-MoE-instruct</option>
+              <option value="microsoft/Phi-3.5-vision-instruct">microsoft/Phi-3.5-vision-instruct</option>
+              <option value="microsoft/Phi-3-small-8k-instruct">microsoft/Phi-3-small-8k-instruct</option>
+              <option value="microsoft/Phi-3-small-128k-instruct">microsoft/Phi-3-small-128k-instruct</option>
+              <option value="microsoft/Phi-3-medium-4k-instruct">microsoft/Phi-3-medium-4k-instruct</option>
+              <option value="Phi-3-small-8k-instruct">Phi-3-small-8k-instruct</option>
+              <option value="Phi-3-small-128k-instruct">Phi-3-small-128k-instruct</option>
+              <option value="AI21-Jamba-1.5-Large">AI21-Jamba-1.5-Large</option>
+              <option value="AI21-Jamba-1.5-Mini">AI21-Jamba-1.5-Mini</option>
+              <option value="Cohere-command-r-08-2024">Cohere-command-r-08-2024</option>
+              <option value="Cohere-command-r-plus-08-2024">Cohere-command-r-plus-08-2024</option>
+              <option value="Meta-Llama-3.1-8B-Instruct">Meta-Llama-3.1-8B-Instruct</option>
+              <option value="Meta-Llama-3.1-405B-Instruct">Meta-Llama-3.1-405B-Instruct</option>
+              <option value="Mistral-Nemo">Mistral-Nemo</option>
+            </select>
+  </label>
+
+  <label>Type
+    <select id="type"><option value="chat">chat</option><option value="completion">completion</option></select>
+  </label>
+
+  <label>Messages (JSON array) — for chat, e.g. [{"role":"user","content":"Hello"}]
+    <textarea id="input">[{"role":"user","content":"Hello"}]</textarea>
+  </label>
+
+  <div class="row">
+    <div class="col"><label>Options (JSON) — optional
+      <textarea id="options">{"temperature":0}</textarea>
+    </label></div>
+    <div class="col">
+      <label>&nbsp;<br /><button id="send">Send</button> <button id="textOnly">Text only</button></label>
+    </div>
+  </div>
+
+  <h3>Response</h3>
+  <pre id="result">(no response yet)</pre>
+  <h3>History</h3>
+  <pre id="history">(no history)</pre>
+  </div>
+
+  <div id="simple-tab" class="tab-content">
+    <label>Model
+                  <select id="simpleModel" required>
+              <option value="openai/gpt-4o-mini">openai/gpt-4o-mini (швидка)</option>
+              <option value="openai/gpt-4o">openai/gpt-4o (потужна)</option>
+              <option value="gpt-4o-mini">gpt-4o-mini (коротка назва)</option>
+              <option value="gpt-4o">gpt-4o (коротка назва)</option>
+              <option value="microsoft/Phi-3.5-mini-instruct">microsoft/Phi-3.5-mini-instruct (міні)</option>
+              <option value="microsoft/Phi-3-mini-4k-instruct">microsoft/Phi-3-mini-4k-instruct (міні 4K)</option>
+              <option value="Phi-3.5-mini-instruct">Phi-3.5-mini-instruct (короткий міні)</option>
+              <option value="Phi-3-mini-4k-instruct">Phi-3-mini-4k-instruct (короткий міні 4K)</option>
+              <option value="Phi-3-medium-4k-instruct">Phi-3-medium-4k-instruct (середній)</option>
+              <option value="microsoft/Phi-3.5-MoE-instruct">microsoft/Phi-3.5-MoE-instruct (експерт)</option>
+              <option value="microsoft/Phi-3.5-vision-instruct">microsoft/Phi-3.5-vision-instruct (зір)</option>
+              <option value="microsoft/Phi-3-small-8k-instruct">microsoft/Phi-3-small-8k-instruct (8K контекст)</option>
+              <option value="microsoft/Phi-3-small-128k-instruct">microsoft/Phi-3-small-128k-instruct (128K контекст)</option>
+              <option value="microsoft/Phi-3-medium-4k-instruct">microsoft/Phi-3-medium-4k-instruct (середній 4K)</option>
+              <option value="Phi-3-small-8k-instruct">Phi-3-small-8k-instruct (малий 8K)</option>
+              <option value="Phi-3-small-128k-instruct">Phi-3-small-128k-instruct (малий 128K)</option>
+              <option value="AI21-Jamba-1.5-Large">AI21-Jamba-1.5-Large (великий)</option>
+              <option value="AI21-Jamba-1.5-Mini">AI21-Jamba-1.5-Mini (компактний)</option>
+              <option value="Cohere-command-r-08-2024">Cohere-command-r-08-2024 (командний)</option>
+              <option value="Cohere-command-r-plus-08-2024">Cohere-command-r-plus-08-2024 (командний+)</option>
+              <option value="Meta-Llama-3.1-8B-Instruct">Meta-Llama-3.1-8B-Instruct (8B)</option>
+              <option value="Meta-Llama-3.1-405B-Instruct">Meta-Llama-3.1-405B-Instruct (405B найбільша!)</option>
+              <option value="Mistral-Nemo">Mistral-Nemo (немо)</option>
+            </select>
+      <button class="clear-btn" id="clearChat">Clear</button>
+      <button class="test-btn" id="testModel">Test Model</button>
+      <button class="save-btn" id="saveChat">💾 Save</button>
+      <button class="load-btn" id="toggleHistory">📂 History</button>
+    </label>
+    
+    <div id="historyPanel" class="history-panel" style="display: none;">
+      <h3>Збережені розмови</h3>
+      <div id="historyList"></div>
+    </div>
+    
+    <div id="simpleChat"></div>
+    
+    <div class="row">
+      <div class="col">
+        <input id="simpleInput" placeholder="Type your message..." style="width:100%; padding:0.5rem" />
+      </div>
+      <div style="flex:0">
+        <button id="simpleSend" style="padding:0.5rem 1rem">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tools Tab -->
+  <div id="tools-tab" class="tab-content">
+    <h2>🛠️ Code Generator</h2>
+    <p>Generate ready-to-use code examples for different programming languages and scenarios.</p>
+    
+    <div class="row">
+      <div class="col">
+        <label>Programming Language
+          <select id="codeLanguage" required>
+            <option value="js">JavaScript (Node.js)</option>
+            <option value="python">Python</option>
+            <option value="bash">Shell/Bash</option>
+          </select>
+        </label>
+        
+        <label>Code Type
+          <select id="codeType" required>
+            <option value="basic">Basic Chat Example</option>
+            <option value="interactive">Interactive Chat</option>
+            <option value="benchmark">Performance Benchmark</option>
+          </select>
+        </label>
+        
+        <label>Model to Use
+          <select id="codeModel" required>
+            <option value="gpt-4o-mini">gpt-4o-mini (fastest)</option>
+            <option value="gpt-4o">gpt-4o (powerful)</option>
+            <option value="Phi-3.5-mini-instruct">Phi-3.5-mini-instruct</option>
+            <option value="AI21-Jamba-1.5-Large">AI21-Jamba-1.5-Large</option>
+            <option value="Meta-Llama-3.1-70B-Instruct">Meta-Llama-3.1-70B-Instruct</option>
+            <option value="Cohere-command-r-plus">Cohere-command-r-plus</option>
+          </select>
+        </label>
+        
+        <label>Custom Prompt (optional)
+          <input id="codePrompt" placeholder="e.g., Write a joke about programming" style="width:100%; padding:0.5rem" />
+        </label>
+        
+        <div style="margin-top: 1rem;">
+          <button id="generateCode" style="background: #28a745; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; margin-right: 0.5rem;">
+            🚀 Generate Code
+          </button>
+          <button id="downloadCode" style="background: #17a2b8; color: white; border: none; padding: 0.75rem 1rem; border-radius: 4px; cursor: pointer;">
+            💾 Download
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <div style="margin-top: 2rem;">
+      <h3>Generated Code:</h3>
+      <pre id="codeOutput" style="background: #f8f9fa; border: 1px solid #dee2e6; padding: 1rem; min-height: 200px; white-space: pre-wrap; font-family: 'Courier New', monospace;">
+Click "Generate Code" to create a ready-to-use example...
+      </pre>
+    </div>
+    
+    <div style="margin-top: 1rem; background: #e7f3ff; padding: 1rem; border-radius: 4px;">
+      <h4>💡 Quick Tips:</h4>
+      <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+        <li><strong>JavaScript:</strong> Ready for Node.js, includes error handling</li>
+        <li><strong>Python:</strong> Includes timing and usage statistics</li>
+        <li><strong>Shell:</strong> Uses curl with both simple and OpenAI APIs</li>
+        <li><strong>Download:</strong> Get the code as a file to run locally</li>
+      </ul>
+      
+      <p style="margin: 0.5rem 0;"><strong>Terminal Usage:</strong></p>
+      <code style="background: #2d3748; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 3px;">
+        node code-generator.mjs basic js gpt-4o-mini "Your prompt here"
+      </code>
+    </div>
+  </div>
+
+  <script>
+    const send = document.getElementById('send');
+    const result = document.getElementById('result');
+    const textOnlyBtn = document.getElementById('textOnly');
+    const historyPre = document.getElementById('history');
+    
+    // History Sidebar
+    const historyToggleBtn = document.getElementById('historyToggleBtn');
+    const historySidebar = document.getElementById('historySidebar');
+    const closeSidebar = document.getElementById('closeSidebar');
+    const sidebarHistoryList = document.getElementById('sidebarHistoryList');
+    
+    // Toggle sidebar
+    historyToggleBtn.addEventListener('click', () => {
+      historySidebar.classList.add('open');
+      updateSidebarHistoryList();
+    });
+    
+    closeSidebar.addEventListener('click', () => {
+      historySidebar.classList.remove('open');
+    });
+    
+    // Close sidebar when clicking outside
+    document.addEventListener('click', (e) => {
+      if (historySidebar.classList.contains('open') && 
+          !historySidebar.contains(e.target) && 
+          !historyToggleBtn.contains(e.target)) {
+        historySidebar.classList.remove('open');
+      }
+    });
+
+    function showTab(tabName) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      
+      // Знайти і активувати правильну вкладку
+      const targetTab = Array.from(document.querySelectorAll('.tab')).find(t => 
+        t.getAttribute('onclick') && t.getAttribute('onclick').includes(tabName)
+      );
+      if (targetTab) {
+        targetTab.classList.add('active');
+      }
+      
+      const targetContent = document.getElementById(tabName + '-tab');
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+    }
+
+    // Simple chat functionality
+    const simpleChat = document.getElementById('simpleChat');
+    const simpleInput = document.getElementById('simpleInput');
+    const simpleSend = document.getElementById('simpleSend');
+    const simpleModel = document.getElementById('simpleModel');
+    const clearChat = document.getElementById('clearChat');
+    const testModel = document.getElementById('testModel');
+    const saveChat = document.getElementById('saveChat');
+    const toggleHistory = document.getElementById('toggleHistory');
+    const historyPanel = document.getElementById('historyPanel');
+    const historyList = document.getElementById('historyList');
+
+    // Chat history management
+    let chatMessages = [];
+    
+    function saveToLocalStorage(name) {
+      if (chatMessages.length === 0) {
+        alert('❌ Немає повідомлень для збереження');
+        return;
+      }
+      
+      const histories = JSON.parse(localStorage.getItem('chatHistories') || '[]');
+      const newHistory = {
+        id: Date.now(),
+        name: name || `Chat ${new Date().toLocaleString('uk-UA')}`,
+        model: simpleModel ? simpleModel.value : 'unknown',
+        messages: chatMessages.slice(),
+        timestamp: new Date().toISOString()
+      };
+      histories.unshift(newHistory);
+      
+      // Зберігаємо максимум 20 історій
+      if (histories.length > 20) histories.pop();
+      
+      localStorage.setItem('chatHistories', JSON.stringify(histories));
+      updateHistoryList();
+      updateSidebarHistoryList();
+      alert('✅ Розмова збережена!');
+    }
+    
+    function loadFromLocalStorage(id) {
+      const histories = JSON.parse(localStorage.getItem('chatHistories') || '[]');
+      const history = histories.find(h => h.id === id);
+      
+      if (history) {
+        chatMessages = history.messages.slice();
+        if (simpleModel) {
+          simpleModel.value = history.model;
+        }
+        renderChatHistory();
+        historySidebar.classList.remove('open');
+        
+        // Переключаємось на Simple Chat вкладку
+        showTab('simple');
+        
+        alert('✅ Розмова завантажена!');
+      }
+    }
+    
+    function deleteHistory(id) {
+      if (!confirm('Видалити цю розмову?')) return;
+      
+      let histories = JSON.parse(localStorage.getItem('chatHistories') || '[]');
+      histories = histories.filter(h => h.id !== id);
+      localStorage.setItem('chatHistories', JSON.stringify(histories));
+      updateHistoryList();
+      updateSidebarHistoryList();
+    }
+    
+    function updateHistoryList() {
+      const histories = JSON.parse(localStorage.getItem('chatHistories') || '[]');
+      
+      if (histories.length === 0) {
+        historyList.innerHTML = '<p style="color: #666; text-align: center;">Немає збережених розмов</p>';
+        return;
+      }
+      
+      historyList.innerHTML = histories.map(h => `
+        <div class="history-item">
+          <div>
+            <strong>${h.name}</strong>
+            <br>
+            <small style="color: #666;">📅 ${new Date(h.timestamp).toLocaleString('uk-UA')} | 🤖 ${h.model} | 💬 ${h.messages.length} messages</small>
+          </div>
+          <div class="history-actions">
+            <button class="load-history-btn" onclick="loadHistoryById(${h.id})">Завантажити</button>
+            <button class="delete-btn" onclick="deleteHistoryById(${h.id})">Видалити</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function updateSidebarHistoryList() {
+      const histories = JSON.parse(localStorage.getItem('chatHistories') || '[]');
+      
+      if (histories.length === 0) {
+        sidebarHistoryList.innerHTML = '<p style="color: #666; text-align: center; padding: 2rem;">Немає збережених розмов</p>';
+        return;
+      }
+      
+      sidebarHistoryList.innerHTML = histories.map(h => `
+        <div class="history-item">
+          <div>
+            <strong>${h.name}</strong>
+            <br>
+            <small style="color: #666;">📅 ${new Date(h.timestamp).toLocaleString('uk-UA')}</small>
+            <br>
+            <small style="color: #666;">🤖 ${h.model} | 💬 ${h.messages.length} повідомлень</small>
+          </div>
+          <div class="history-actions">
+            <button class="load-history-btn" onclick="loadHistoryById(${h.id})">Завантажити</button>
+            <button class="delete-btn" onclick="deleteHistoryById(${h.id})">Видалити</button>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function renderChatHistory() {
+      simpleChat.innerHTML = '';
+      chatMessages.forEach(msg => {
+        addMessage(msg.role, msg.content, false);
+      });
+    }
+    
+    // Global functions for inline onclick
+    window.loadHistoryById = loadFromLocalStorage;
+    window.deleteHistoryById = deleteHistory;
+    window.saveCurrentChat = function() {
+      const name = prompt('Введіть назву розмови:', `Chat ${new Date().toLocaleString('uk-UA')}`);
+      if (name) {
+        saveToLocalStorage(name);
+      }
+    };
+
+    function addMessage(role, content, saveToHistory = true) {
+      const div = document.createElement('div');
+      div.className = `message ${role}`;
+      if (role === 'error') {
+        div.innerHTML = `<span class="${role}">error:</span> ${content}`;
+      } else if (role === 'loading') {
+        div.innerHTML = `<span class="${role}">⏳ loading...</span>`;
+      } else {
+        div.innerHTML = `<span class="${role}">${role}:</span> ${content}`;
+        
+        // Зберігаємо в історію (не зберігаємо loading та error)
+        if (saveToHistory) {
+          chatMessages.push({ role, content, timestamp: new Date().toISOString() });
+        }
+      }
+      simpleChat.appendChild(div);
+      simpleChat.scrollTop = simpleChat.scrollHeight;
+      return div;
+    }
+
+    function clearChatHistory() {
+      simpleChat.innerHTML = '';
+      chatMessages = [];
+    }
+
+    async function testCurrentModel() {
+      const model = simpleModel.value;
+      const loadingMsg = addMessage('loading', `Testing ${model}...`);
+      
+      try {
+        const response = await fetch('/v1/simple-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, message: "Test" })
+        });
+        
+        const data = await response.json();
+        loadingMsg.remove();
+        
+        if (data.error) {
+          addMessage('error', `${model} - ${data.error}`);
+        } else {
+          addMessage('assistant', `✅ ${model} works! Response: "${data.response.substring(0, 50)}..."`);
+        }
+      } catch (err) {
+        loadingMsg.remove();
+        addMessage('error', `${model} - Connection error: ${err.message}`);
+      }
+    }
+
+    async function sendSimpleMessage() {
+      const message = simpleInput.value.trim();
+      if (!message) return;
+      
+      const model = simpleModel.value;
+      addMessage('user', message);
+      simpleInput.value = '';
+      
+      try {
+        const response = await fetch('/v1/simple-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model, message })
+        });
+        
+        const data = await response.json();
+        if (data.error) {
+          addMessage('error', data.error);
+        } else {
+          addMessage('assistant', data.response);
+        }
+      } catch (err) {
+        addMessage('error', 'Connection error: ' + err.message);
+      }
+    }
+
+    simpleSend.addEventListener('click', sendSimpleMessage);
+    simpleInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendSimpleMessage();
+    });
+    
+    clearChat.addEventListener('click', clearChatHistory);
+    testModel.addEventListener('click', testCurrentModel);
+    
+    saveChat.addEventListener('click', () => {
+      if (chatMessages.length === 0) {
+        alert('❌ Немає повідомлень для збереження');
+        return;
+      }
+      
+      const name = prompt('Введіть назву розмови:', `Chat ${new Date().toLocaleString('uk-UA')}`);
+      if (name) {
+        saveToLocalStorage(name);
+      }
+    });
+    
+    toggleHistory.addEventListener('click', () => {
+      if (historyPanel.style.display === 'none') {
+        historyPanel.style.display = 'block';
+        updateHistoryList();
+      } else {
+        historyPanel.style.display = 'none';
+      }
+    });
+    
+    // Load history list on page load
+    updateHistoryList();
+    updateSidebarHistoryList();
+
+    async function appendHistory(entry){
+      try{
+        const r = await fetch('/v1/history', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(entry) });
+        const json = await r.json();
+        historyPre.textContent = JSON.stringify(json, null, 2);
+      }catch(e){ console.warn('history save failed', e); }
+    }
+
+    send.addEventListener('click', async ()=>{
+      const model = document.getElementById('model').value;
+      const type = document.getElementById('type').value;
+      let input;
+      try{ input = JSON.parse(document.getElementById('input').value); }catch(e){ alert('Invalid JSON in Messages'); return }
+      let options = {};
+      try{ options = JSON.parse(document.getElementById('options').value); }catch(e){ alert('Invalid JSON in Options'); return }
+
+      result.textContent = '...loading';
+      try{
+        const r = await fetch('/v1/proxy', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ model, type, input, options })
+        });
+        const json = await r.json();
+        result.textContent = JSON.stringify(json, null, 2);
+        appendHistory({ ts: new Date().toISOString(), req: { model, type, input, options }, res: json });
+      }catch(err){
+        result.textContent = String(err);
+      }
+    });
+
+    textOnlyBtn.addEventListener('click', async ()=>{
+      const model = document.getElementById('model').value;
+      const type = document.getElementById('type').value;
+      let input;
+      try{ input = JSON.parse(document.getElementById('input').value); }catch(e){ alert('Invalid JSON in Messages'); return }
+      let options = {};
+      try{ options = JSON.parse(document.getElementById('options').value); }catch(e){ alert('Invalid JSON in Options'); return }
+      result.textContent = '...loading';
+      try{
+        const r = await fetch('/v1/proxy', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ model, type, input, options })
+        });
+        const json = await r.json();
+        // try to extract human text
+        let text = JSON.stringify(json);
+        try{
+          if(json.choices && json.choices[0]){
+            const c = json.choices[0];
+            if(c.message && c.message.content) text = c.message.content;
+            else if(c.text) text = c.text;
+            else if(json.output && Array.isArray(json.output) && json.output[0].content && json.output[0].content[0]){
+              text = json.output[0].content[0].text || JSON.stringify(json.output);
+            }
+          } else if(json.output && json.output[0] && json.output[0].content){
+            // new responses format
+            const content = json.output[0].content.find(x=>x.type==='output_text' || x.type==='message');
+            if(content) text = content.text || JSON.stringify(content);
+          }
+        }catch(e){ }
+        result.textContent = text;
+        appendHistory({ ts: new Date().toISOString(), req: { model, type, input, options }, res: { text } });
+      }catch(err){ result.textContent = String(err); }
+    });
+
+    // Code Generator Tab
+    document.getElementById('generateCode').addEventListener('click', async () => {
+      const language = document.getElementById('codeLanguage').value;
+      const type = document.getElementById('codeType').value;
+      const model = document.getElementById('codeModel').value;
+      const prompt = document.getElementById('codePrompt').value || 'Hello, world!';
+      
+      const output = document.getElementById('codeOutput');
+      output.textContent = 'Generating...';
+      
+      try {
+        const response = await fetch('/api/generate-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language, type, model, prompt })
+        });
+        
+        const result = await response.json();
+        if (result.error) {
+          output.textContent = result.error;
+        } else {
+          output.textContent = result.code;
+        }
+      } catch (error) {
+        output.textContent = 'Error: ' + error.message;
+      }
+    });
+
+    document.getElementById('downloadCode').addEventListener('click', () => {
+      const code = document.getElementById('codeOutput').textContent;
+      const language = document.getElementById('codeLanguage').value;
+      const type = document.getElementById('codeType').value;
+      
+      const extensions = { js: 'mjs', python: 'py', bash: 'sh' };
+      const filename = `generated-${type}.${extensions[language] || 'txt'}`;
+      
+      const blob = new Blob([code], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
