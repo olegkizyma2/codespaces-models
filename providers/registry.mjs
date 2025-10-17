@@ -113,18 +113,18 @@ export class ProviderRegistry {
       try {
         const providerConfig = config[name] || {};
         
-        // Check if provider is explicitly disabled
-        if (providerConfig.enabled === false) {
-          console.log(`[PROVIDER-REGISTRY] Provider ${name} is disabled in config`);
-          continue;
-        }
-
         const provider = new ProviderClass(providerConfig);
         
         // Validate provider configuration
         const validation = provider.validate();
         if (!validation.valid) {
           console.log(`[PROVIDER-REGISTRY] Provider ${name} validation failed:`, validation.errors);
+          provider.enabled = false;
+        }
+        
+        // Check if provider is explicitly disabled in config
+        if (providerConfig.enabled === false) {
+          console.log(`[PROVIDER-REGISTRY] Provider ${name} is disabled in config`);
           provider.enabled = false;
         }
         
