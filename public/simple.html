@@ -623,11 +623,12 @@
                     // Clear loading option
                     this.modelSelect.innerHTML = '';
                     
-                    // Group models by provider
+                    // Group models by provider (use explicit provider field when available)
                     const grouped = {};
                     models.forEach(model => {
-                        const parts = model.id.split('/');
-                        const provider = parts.length > 1 ? parts[0] : 'Other';
+                        // Prefer explicit provider field from API; fallback to prefix from id
+                        let provider = model.provider || (model.id && model.id.includes('/') ? model.id.split('/')[0] : 'other');
+                        if (!provider) provider = 'other';
                         if (!grouped[provider]) grouped[provider] = [];
                         grouped[provider].push(model);
                     });
@@ -635,7 +636,7 @@
                     // Add options
                     Object.keys(grouped).sort().forEach(provider => {
                         const optgroup = document.createElement('optgroup');
-                        optgroup.label = provider.toUpperCase();
+                        optgroup.label = (provider || 'other').toString().toUpperCase();
                         
                         grouped[provider].forEach(model => {
                             const option = document.createElement('option');
@@ -784,14 +785,19 @@
                 
                 try {
                     const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
+                    const decoder = new TextDecoder('utf-8');
+                    let buffer = '';
                     
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
                         
-                        const chunk = decoder.decode(value);
-                        const lines = chunk.split('\n');
+                        const chunk = decoder.decode(value, { stream: true });
+                        buffer += chunk;
+                        const lines = buffer.split('\n');
+                        
+                        // Keep last incomplete line in buffer
+                        buffer = lines.pop() || '';
                         
                         for (const line of lines) {
                             if (line.startsWith('data: ')) {
@@ -824,6 +830,27 @@
                                     console.error('Error parsing SSE:', e);
                                     messageEl.remove();
                                     throw e; // Re-throw to stop streaming
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Process any remaining buffered data
+                    if (buffer.trim()) {
+                        if (buffer.startsWith('data: ')) {
+                            const data = buffer.slice(6);
+                            if (data !== '[DONE]') {
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    const content = isCompletion 
+                                        ? (parsed.choices?.[0]?.text || '') 
+                                        : (parsed.choices?.[0]?.delta?.content || '');
+                                    if (content) {
+                                        fullResponse += content;
+                                        textEl.textContent = fullResponse;
+                                    }
+                                } catch (e) {
+                                    console.error('Error parsing final SSE chunk:', e);
                                 }
                             }
                         }

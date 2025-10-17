@@ -73,7 +73,8 @@ cookbooks/python/openai/data/hotel_invoices/hotel_DB.db
 cookbooks/python/openai/hallucination_results.csv
 
 # Cache
-.cache
+# .cache directory is now safe to commit (no tokens stored)
+# Token is stored only in .env file
 .eslintcache
 
 # Coverage

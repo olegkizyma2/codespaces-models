@@ -1,0 +1,15 @@
+{
+  "expires_at": "2025-10-17T19:53:58.017Z",
+  "info": {
+    "endpoints": {
+      "api": "https://api.individual.githubcopilot.com",
+      "origin-tracker": "https://origin-tracker.individual.githubcopilot.com",
+      "proxy": "https://proxy.individual.githubcopilot.com",
+      "telemetry": "https://telemetry.individual.githubcopilot.com"
+    },
+    "expires_at": 1760731137,
+    "refresh_in": 1500,
+    "sku": "monthly_subscriber_quota",
+    "chat_enabled": true
+  }
+}

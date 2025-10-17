@@ -2722,9 +2722,9 @@ async function handleModelsList(req, res) {
     data, 
     meta: { 
       rate_limit_disclaimer: 'Values are heuristic / approximate; real upstream provider limits may vary.',
-      github_models: models.length,
+      static_models: models.length, // previously github_models
       provider_models: providerModels.length,
-      total_models: allModels.length
+      total_models: data.length
     } 
   });
 }

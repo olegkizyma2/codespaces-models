@@ -57,27 +57,42 @@ export class GitHubCopilotProvider extends Provider {
   }
 
   /**
-   * Load cached token from disk
+   * Load token from .env and metadata from cache
    */
   async loadCachedToken() {
     try {
-      const data = await fs.readFile(this.cacheFile, 'utf8');
-      const cached = JSON.parse(data);
-      
-      if (new Date(cached.expires_at) > new Date()) {
-        this.tokenCache = cached.info.token;
-        this.tokenExpiry = new Date(cached.expires_at);
-        this.apiEndpoint = cached.info.endpoints.api;
-        return true;
+      // Always read token from .env
+      const envToken = process.env.GITHUB_COPILOT_TOKEN;
+      if (!envToken) {
+        return false;
       }
+
+      // Try to load metadata (endpoints, expiry) from cache
+      try {
+        const data = await fs.readFile(this.cacheFile, 'utf8');
+        const cached = JSON.parse(data);
+        
+        if (new Date(cached.expires_at) > new Date()) {
+          this.tokenCache = envToken; // Use token from .env, not cache
+          this.tokenExpiry = new Date(cached.expires_at);
+          this.apiEndpoint = cached.info.endpoints?.api;
+          return true;
+        }
+      } catch (err) {
+        // Cache doesn't exist or is invalid - that's OK
+      }
+
+      // If we have token but no valid cache, use token anyway
+      this.tokenCache = envToken;
+      return true;
     } catch (err) {
-      // Cache doesn't exist or is invalid
+      console.error('[GITHUB-COPILOT] Error loading token:', err);
     }
     return false;
   }
 
   /**
-   * Save token to cache
+   * Save metadata to cache (without token - token stays in .env only)
    */
   async saveTokenCache(info) {
     try {
@@ -85,14 +100,24 @@ export class GitHubCopilotProvider extends Provider {
       await fs.mkdir(cacheDir, { recursive: true });
       
       const expiresAt = new Date(Date.now() + info.refresh_in * 1000);
+      
+      // Save only metadata, NOT the token
       const cacheData = {
         expires_at: expiresAt.toISOString(),
-        info
+        info: {
+          endpoints: info.endpoints,
+          expires_at: info.expires_at,
+          refresh_in: info.refresh_in,
+          sku: info.sku,
+          chat_enabled: info.chat_enabled,
+          // NO TOKEN - it stays in .env only
+        }
       };
       
       await fs.writeFile(this.cacheFile, JSON.stringify(cacheData, null, 2));
       
-      this.tokenCache = info.token;
+      // Use token from .env
+      this.tokenCache = process.env.GITHUB_COPILOT_TOKEN || info.token;
       this.tokenExpiry = expiresAt;
       this.apiEndpoint = info.endpoints.api;
     } catch (err) {
