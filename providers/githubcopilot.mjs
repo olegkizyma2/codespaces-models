@@ -1,275 +1,472 @@
 /**
  * GitHub Copilot Provider
- * Main provider for GitHub Copilot integration
+ * Real GitHub Copilot API integration (like Goose)
+ * Uses OAuth Device Code Flow for authentication
  */
 import { Provider } from './base.mjs';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// GitHub Copilot OAuth Constants
+const GITHUB_COPILOT_CLIENT_ID = 'Iv1.b507a08c87ecfe98';
+const GITHUB_COPILOT_DEVICE_CODE_URL = 'https://github.com/login/device/code';
+const GITHUB_COPILOT_ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
+const GITHUB_COPILOT_API_KEY_URL = 'https://api.github.com/copilot_internal/v2/token';
+
+// Known models from Goose
+const GITHUB_COPILOT_KNOWN_MODELS = [
+  'gpt-4o',
+  'o1',
+  'o3-mini',
+  'claude-3.7-sonnet',
+  'claude-sonnet-4',
+  'gpt-4.1',
+];
 
 export class GitHubCopilotProvider extends Provider {
   constructor(config = {}) {
     super({
       name: 'githubcopilot',
-      apiKey: config.apiKey || process.env.GITHUB_COPILOT_API_KEY,
-      baseURL: config.baseURL || process.env.GITHUB_COPILOT_BASE_URL || 'https://api.githubcopilot.com',
-      modelPrefix: 'ext-copilot-',
+      apiKey: config.apiKey || process.env.GITHUB_COPILOT_TOKEN,
+      baseURL: config.baseURL || null, // Will be fetched dynamically
+      modelPrefix: 'copilot-',
       ...config
     });
     
-    // Support for multiple tokens (rotation)
-    this.tokens = [];
-    this.currentTokenIndex = 0;
-    this.initializeTokens(config);
+    this.tokenCache = null;
+    this.tokenExpiry = null;
+    this.apiEndpoint = null;
+    this.cacheFile = path.join(__dirname, '..', '.cache', 'githubcopilot-token.json');
   }
 
   /**
-   * Initialize token rotation support
+   * Get GitHub headers (like Goose)
    */
-  initializeTokens(config) {
-    // Collect all GITHUB_COPILOT_TOKEN* from environment
-    const tokenKeys = Object.keys(process.env).filter(key => 
-      key.startsWith('GITHUB_COPILOT_TOKEN')
-    );
-    
-    for (const key of tokenKeys) {
-      const token = process.env[key];
-      if (token && token.trim()) {
-        this.tokens.push({
-          key,
-          value: token.trim(),
-          blocked: false,
-          blockedUntil: 0,
-          failures: 0
-        });
-      }
-    }
-
-    // If single API key provided, use it
-    if (this.apiKey && !this.tokens.some(t => t.value === this.apiKey)) {
-      this.tokens.unshift({
-        key: 'GITHUB_COPILOT_API_KEY',
-        value: this.apiKey,
-        blocked: false,
-        blockedUntil: 0,
-        failures: 0
-      });
-    }
-
-    console.log(`[GITHUB-COPILOT] Initialized with ${this.tokens.length} tokens`);
+  getGitHubHeaders() {
+    return {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': 'GithubCopilot/1.155.0',
+      'editor-version': 'vscode/1.85.1',
+      'editor-plugin-version': 'copilot/1.155.0'
+    };
   }
 
   /**
-   * Get current active token
+   * Load cached token from disk
    */
-  getCurrentToken() {
-    if (this.tokens.length === 0) return null;
-    
-    // Check if current token is blocked
-    const now = Date.now();
-    const current = this.tokens[this.currentTokenIndex];
-    
-    if (current.blocked && current.blockedUntil > now) {
-      // Try to find next available token
-      const availableIndex = this.tokens.findIndex((t, idx) => 
-        idx !== this.currentTokenIndex && (!t.blocked || t.blockedUntil <= now)
-      );
+  async loadCachedToken() {
+    try {
+      const data = await fs.readFile(this.cacheFile, 'utf8');
+      const cached = JSON.parse(data);
       
-      if (availableIndex !== -1) {
-        console.log(`[GITHUB-COPILOT] Switching from blocked token to index ${availableIndex}`);
-        this.currentTokenIndex = availableIndex;
-        return this.tokens[availableIndex].value;
+      if (new Date(cached.expires_at) > new Date()) {
+        this.tokenCache = cached.info.token;
+        this.tokenExpiry = new Date(cached.expires_at);
+        this.apiEndpoint = cached.info.endpoints.api;
+        return true;
       }
+    } catch (err) {
+      // Cache doesn't exist or is invalid
     }
-    
-    return current.value;
+    return false;
   }
 
   /**
-   * Rotate to next token (on rate limit)
+   * Save token to cache
    */
-  rotateToken() {
-    if (this.tokens.length <= 1) {
-      console.log('[GITHUB-COPILOT] No additional tokens available for rotation');
-      return;
+  async saveTokenCache(info) {
+    try {
+      const cacheDir = path.dirname(this.cacheFile);
+      await fs.mkdir(cacheDir, { recursive: true });
+      
+      const expiresAt = new Date(Date.now() + info.refresh_in * 1000);
+      const cacheData = {
+        expires_at: expiresAt.toISOString(),
+        info
+      };
+      
+      await fs.writeFile(this.cacheFile, JSON.stringify(cacheData, null, 2));
+      
+      this.tokenCache = info.token;
+      this.tokenExpiry = expiresAt;
+      this.apiEndpoint = info.endpoints.api;
+    } catch (err) {
+      console.error('[GITHUB-COPILOT] Failed to save cache:', err);
     }
-
-    const currentToken = this.tokens[this.currentTokenIndex];
-    currentToken.blocked = true;
-    currentToken.blockedUntil = Date.now() + 60000; // Block for 1 minute
-    currentToken.failures++;
-
-    this.currentTokenIndex = (this.currentTokenIndex + 1) % this.tokens.length;
-    
-    console.log(`[GITHUB-COPILOT] Rotated to token ${this.tokens[this.currentTokenIndex].key}`);
   }
 
-  async getModels() {
-    // GitHub Copilot models
-    const models = [
-      'gpt-4',
-      'gpt-4-turbo',
-      'gpt-3.5-turbo',
-      'claude-3-opus',
-      'claude-3-sonnet'
-    ];
+  /**
+   * OAuth Device Code Flow - Step 1: Get device code
+   */
+  async getDeviceCode() {
+    const response = await fetch(GITHUB_COPILOT_DEVICE_CODE_URL, {
+      method: 'POST',
+      headers: {
+        ...this.getGitHubHeaders()
+      },
+      body: JSON.stringify({
+        client_id: GITHUB_COPILOT_CLIENT_ID,
+        scope: 'read:user'
+      })
+    });
 
-    return models.map(id => ({
-      id: this.getPrefixedModelName(id),
+    if (!response.ok) {
+      throw new Error(`Failed to get device code: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('\n╔══════════════════════════════════════════════════════════════╗');
+    console.log('║           🔐 GITHUB COPILOT AUTHENTICATION                   ║');
+    console.log('╚══════════════════════════════════════════════════════════════╝\n');
+    console.log(`Please visit: ${data.verification_uri}`);
+    console.log(`Enter code: ${data.user_code}\n`);
+    console.log('Waiting for authorization...\n');
+
+    return data;
+  }
+
+  /**
+   * OAuth Device Code Flow - Step 2: Poll for access token
+   */
+  async pollForAccessToken(deviceCode) {
+    const MAX_ATTEMPTS = 36; // 3 minutes (36 * 5 seconds)
+    
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const response = await fetch(GITHUB_COPILOT_ACCESS_TOKEN_URL, {
+        method: 'POST',
+        headers: {
+          ...this.getGitHubHeaders()
+        },
+        body: JSON.stringify({
+          client_id: GITHUB_COPILOT_CLIENT_ID,
+          device_code: deviceCode,
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to poll for token: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.access_token) {
+        console.log('✅ Authorization successful!\n');
+        return data.access_token;
+      } else if (data.error === 'authorization_pending') {
+        console.log(`⏳ Waiting for authorization (attempt ${attempt + 1}/${MAX_ATTEMPTS})...`);
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+      } else if (data.error) {
+        throw new Error(`OAuth error: ${data.error}`);
+      }
+    }
+
+    throw new Error('Authorization timeout - please try again');
+  }
+
+  /**
+   * OAuth Device Code Flow - Complete flow
+   */
+  async performOAuthFlow() {
+    try {
+      const deviceCodeInfo = await this.getDeviceCode();
+      const accessToken = await this.pollForAccessToken(deviceCodeInfo.device_code);
+      
+      // Save to .env file
+      const envPath = path.join(__dirname, '..', '.env');
+      let envContent = await fs.readFile(envPath, 'utf8');
+      
+      // Update or add GITHUB_COPILOT_TOKEN
+      if (envContent.includes('GITHUB_COPILOT_TOKEN=')) {
+        envContent = envContent.replace(
+          /GITHUB_COPILOT_TOKEN=.*/,
+          `GITHUB_COPILOT_TOKEN=${accessToken}`
+        );
+      } else {
+        envContent += `\nGITHUB_COPILOT_TOKEN=${accessToken}\n`;
+      }
+      
+      await fs.writeFile(envPath, envContent);
+      console.log('✅ Token saved to .env file\n');
+      
+      this.apiKey = accessToken;
+      return accessToken;
+    } catch (error) {
+      console.error('❌ OAuth flow failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get Copilot API token
+   */
+  async getCopilotToken() {
+    // Check if we have valid cached token
+    if (this.tokenCache && this.tokenExpiry && this.tokenExpiry > new Date()) {
+      return this.tokenCache;
+    }
+
+    // Try to load from cache
+    if (await this.loadCachedToken()) {
+      if (this.tokenExpiry > new Date()) {
+        return this.tokenCache;
+      }
+    }
+
+    // Need to refresh
+    let accessToken = this.apiKey || process.env.GITHUB_COPILOT_TOKEN;
+    
+    // If no token, start OAuth flow
+    if (!accessToken || accessToken === 'your_copilot_token_here') {
+      console.log('\n⚠️  No GitHub Copilot token found. Starting OAuth flow...\n');
+      accessToken = await this.performOAuthFlow();
+    }
+
+    const response = await fetch(GITHUB_COPILOT_API_KEY_URL, {
+      headers: {
+        ...this.getGitHubHeaders(),
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    if (!response.ok) {
+      // If 404, token might be invalid - try OAuth flow
+      if (response.status === 404 || response.status === 401) {
+        console.log('\n⚠️  GitHub Copilot token invalid. Starting OAuth flow...\n');
+        accessToken = await this.performOAuthFlow();
+        
+        // Retry with new token
+        const retryResponse = await fetch(GITHUB_COPILOT_API_KEY_URL, {
+          headers: {
+            ...this.getGitHubHeaders(),
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+        
+        if (!retryResponse.ok) {
+          throw new Error(`Failed to get Copilot token: ${retryResponse.status} ${retryResponse.statusText}`);
+        }
+        
+        const tokenInfo = await retryResponse.json();
+        await this.saveTokenCache(tokenInfo);
+        return tokenInfo.token;
+      }
+      
+      throw new Error(`Failed to get Copilot token: ${response.status} ${response.statusText}`);
+    }
+
+    const tokenInfo = await response.json();
+    await this.saveTokenCache(tokenInfo);
+    
+    return tokenInfo.token;
+  }
+
+  /**
+   * Get API endpoint and token
+   */
+  async getApiInfo() {
+    const token = await this.getCopilotToken();
+    const endpoint = this.apiEndpoint || 'https://api.githubcopilot.com';
+    return { endpoint, token };
+  }
+
+  /**
+   * Fetch real models from GitHub Copilot API
+   */
+  async getModels() {
+    try {
+      const { endpoint, token } = await this.getApiInfo();
+      
+      const response = await fetch(`${endpoint}/models`, {
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Copilot-Integration-Id': 'vscode-chat',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        console.warn(`[GITHUB-COPILOT] Failed to fetch models: ${response.status}`);
+        return this.getFallbackModels();
+      }
+
+      const data = await response.json();
+      const models = data.data || [];
+      
+      return models.map(model => {
+        const modelId = typeof model === 'string' ? model : model.id;
+        return {
+          id: this.getPrefixedModelName(modelId),
+          original_id: modelId,
+          object: 'model',
+          created: Date.now(),
+          owned_by: this.getModelOwner(modelId),
+          provider: 'githubcopilot',
+          description: `GitHub Copilot model: ${modelId}`
+        };
+      });
+    } catch (error) {
+      console.error('[GITHUB-COPILOT] Error fetching models:', error.message);
+      return this.getFallbackModels();
+    }
+  }
+
+  /**
+   * Fallback models if API fetch fails
+   */
+  getFallbackModels() {
+    return GITHUB_COPILOT_KNOWN_MODELS.map(modelId => ({
+      id: this.getPrefixedModelName(modelId),
+      original_id: modelId,
       object: 'model',
-      owned_by: 'github-copilot',
-      provider: 'githubcopilot'
+      created: Date.now(),
+      owned_by: this.getModelOwner(modelId),
+      provider: 'githubcopilot',
+      description: `GitHub Copilot model: ${modelId}`
     }));
   }
 
-  async chatCompletion(params) {
-    const { model, messages, temperature = 0.7, max_tokens = 2048, stream = false } = params;
-    const originalModel = this.getOriginalModelName(model);
-    const token = this.getCurrentToken();
-
-    if (!token) {
-      throw new Error('No GitHub Copilot token available');
+  /**
+   * Determine model owner from model name
+   */
+  getModelOwner(modelId) {
+    if (modelId.startsWith('gpt-') || modelId.startsWith('o1') || modelId.startsWith('o3') || modelId.startsWith('o4')) {
+      return 'openai';
+    } else if (modelId.startsWith('claude-')) {
+      return 'anthropic';
+    } else if (modelId.startsWith('gemini-')) {
+      return 'google';
     }
+    return 'github-copilot';
+  }
+
+  async chatCompletion(params) {
+    const { model, messages, temperature, max_tokens, stream = false, ...rest } = params;
+    const originalModel = this.getOriginalModelName(model);
+    const { endpoint, token } = await this.getApiInfo();
 
     const requestBody = {
       model: originalModel,
       messages,
       temperature,
       max_tokens,
-      stream
+      stream,
+      ...rest
     };
 
     try {
-      const response = await fetch(`${this.baseURL}/v1/chat/completions`, {
+      const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          ...this.getGitHubHeaders(),
+          'Authorization': `Bearer ${token}`,
+          'Copilot-Integration-Id': 'vscode-chat'
         },
         body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
-        // Handle rate limit
-        if (response.status === 429) {
-          console.log('[GITHUB-COPILOT] Rate limit hit, rotating token');
-          this.rotateToken();
-          throw new Error('Rate limit exceeded, token rotated');
-        }
-        
-        const error = await response.text();
-        throw new Error(`GitHub Copilot API error: ${error}`);
+        const errorText = await response.text();
+        throw new Error(`GitHub Copilot API error (${response.status}): ${errorText}`);
+      }
+
+      if (stream) {
+        return response;
       }
 
       const data = await response.json();
-
-      // Return in OpenAI format
       return {
-        id: data.id || `copilot-${Date.now()}`,
-        object: 'chat.completion',
-        created: data.created || Math.floor(Date.now() / 1000),
-        model: this.getPrefixedModelName(originalModel),
-        choices: data.choices || [{
-          index: 0,
-          message: data.message || { role: 'assistant', content: '' },
-          finish_reason: data.finish_reason || 'stop'
-        }],
-        usage: data.usage || {
-          prompt_tokens: 0,
-          completion_tokens: 0,
-          total_tokens: 0
-        }
+        ...data,
+        model: this.getPrefixedModelName(originalModel)
       };
     } catch (error) {
-      // Log error but don't expose internal details
       console.error('[GITHUB-COPILOT] Error:', error.message);
       throw error;
     }
   }
 
   async *streamChatCompletion(params) {
-    const { model, messages, temperature = 0.7, max_tokens = 2048 } = params;
+    const { model, messages, temperature, max_tokens, ...rest } = params;
     const originalModel = this.getOriginalModelName(model);
-    const token = this.getCurrentToken();
-
-    if (!token) {
-      throw new Error('No GitHub Copilot token available');
-    }
+    const { endpoint, token } = await this.getApiInfo();
 
     const requestBody = {
       model: originalModel,
       messages,
       temperature,
       max_tokens,
-      stream: true
+      stream: true,
+      ...rest
     };
 
-    const response = await fetch(`${this.baseURL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(requestBody)
-    });
+    try {
+      const response = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          ...this.getGitHubHeaders(),
+          'Authorization': `Bearer ${token}`,
+          'Copilot-Integration-Id': 'vscode-chat'
+        },
+        body: JSON.stringify(requestBody)
+      });
 
-    if (!response.ok) {
-      if (response.status === 429) {
-        console.log('[GITHUB-COPILOT] Rate limit hit in stream, rotating token');
-        this.rotateToken();
-        throw new Error('Rate limit exceeded, token rotated');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`GitHub Copilot API error (${response.status}): ${errorText}`);
       }
-      const error = await response.text();
-      throw new Error(`GitHub Copilot API error: ${error}`);
-    }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.substring(6);
-          if (data === '[DONE]') continue;
-          
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') return;
+
           try {
             const parsed = JSON.parse(data);
             yield {
-              id: parsed.id || `copilot-stream-${Date.now()}`,
-              object: 'chat.completion.chunk',
-              created: parsed.created || Math.floor(Date.now() / 1000),
-              model: this.getPrefixedModelName(originalModel),
-              choices: parsed.choices || [{
-                index: 0,
-                delta: parsed.delta || {},
-                finish_reason: parsed.finish_reason || null
-              }]
+              ...parsed,
+              model: this.getPrefixedModelName(originalModel)
             };
           } catch (e) {
-            console.error('[GITHUB-COPILOT] Error parsing stream:', e);
+            // Skip invalid JSON
           }
         }
       }
+    } catch (error) {
+      console.error('[GITHUB-COPILOT] Stream error:', error.message);
+      throw error;
     }
   }
 
-  /**
-   * Get token statistics
-   */
   getTokenStats() {
-    return this.tokens.map((token, idx) => ({
-      key: token.key,
-      active: idx === this.currentTokenIndex,
-      blocked: token.blocked,
-      blockedUntil: token.blockedUntil,
-      failures: token.failures
-    }));
+    return {
+      cached: !!this.tokenCache,
+      expires_at: this.tokenExpiry?.toISOString() || null,
+      api_endpoint: this.apiEndpoint || null
+    };
+  }
+
+  /**
+   * Override requiresApiKey - GitHub Copilot token can be obtained via OAuth
+   */
+  requiresApiKey() {
+    return false; // Token can be obtained dynamically
   }
 }
-
-export default GitHubCopilotProvider;

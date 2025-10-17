@@ -65,9 +65,43 @@ let tokenRotator = null;
 const requestLogs = [];
 const MAX_LOGS = 200; // Зберігаємо останні 200 логів
 
+/**
+ * Маскує чутливу інформацію у повідомленнях про помилки
+ * - GitHub токени (gho_*)
+ * - OpenAI ключі
+ * - Anthropic ключі
+ * - Інші API ключі
+ */
+function maskSensitiveData(message) {
+  if (!message || typeof message !== 'string') {
+    return message;
+  }
+  
+  let masked = message;
+  
+  // Маскуємо GitHub токени (gho_XXXXXXXX)
+  masked = masked.replace(/gho_[a-zA-Z0-9_]{36,}/g, 'gho_[MASKED]');
+  
+  // Маскуємо будь-які довгі рядки які виглядають як токени в "Incorrect API key" повідомленнях
+  masked = masked.replace(/Incorrect API key provided: [^\s.]+/g, 'Incorrect API key provided: [MASKED]');
+  masked = masked.replace(/Authorization.*Bearer\s+[a-zA-Z0-9_-]+/gi, 'Authorization: Bearer [MASKED]');
+  
+  // Маскуємо sk- (OpenAI) ключі
+  masked = masked.replace(/sk-[a-zA-Z0-9_-]{20,}/g, 'sk-[MASKED]');
+  
+  // Маскуємо claude API ключи
+  masked = masked.replace(/claude_[a-zA-Z0-9_-]{20,}/g, 'claude_[MASKED]');
+  
+  // Маскуємо інші потенційні ключі та токени
+  masked = masked.replace(/(Bearer|token|api_key|apikey)[\s:]*([a-zA-Z0-9_-]{20,})/gi, '$1 [MASKED]');
+  
+  return masked;
+}
+
 function addRequestLog(logEntry) {
   requestLogs.unshift({
     ...logEntry,
+    message: maskSensitiveData(logEntry.message),
     timestamp: new Date().toISOString()
   });
   
@@ -525,6 +559,79 @@ app.post('/api/monitoring/providers/:name/logs/clear', (req, res) => {
   }
 });
 
+// GitHub Copilot OAuth endpoints
+let oauthState = null; // Global state for OAuth flow
+
+// Start OAuth flow
+app.post('/api/copilot/auth/start', async (req, res) => {
+  try {
+    const copilotProvider = providerRegistry.get('githubcopilot');
+    if (!copilotProvider) {
+      return res.status(404).json({ error: 'GitHub Copilot provider not found' });
+    }
+
+    const deviceCodeInfo = await copilotProvider.getDeviceCode();
+    
+    oauthState = {
+      deviceCode: deviceCodeInfo.device_code,
+      userCode: deviceCodeInfo.user_code,
+      verificationUri: deviceCodeInfo.verification_uri,
+      status: 'pending',
+      startedAt: new Date()
+    };
+
+    // Start polling in background
+    copilotProvider.pollForAccessToken(deviceCodeInfo.device_code)
+      .then(accessToken => {
+        oauthState.status = 'authorized';
+        oauthState.accessToken = accessToken;
+        oauthState.authorizedAt = new Date();
+      })
+      .catch(error => {
+        oauthState.status = 'error';
+        oauthState.error = error.message;
+      });
+
+    res.json({
+      userCode: deviceCodeInfo.user_code,
+      verificationUri: deviceCodeInfo.verification_uri,
+      expiresIn: deviceCodeInfo.expires_in,
+      status: 'pending'
+    });
+  } catch (error) {
+    console.error('[COPILOT-OAUTH] Error starting OAuth flow:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Check OAuth status
+app.get('/api/copilot/auth/status', (req, res) => {
+  if (!oauthState) {
+    return res.json({ status: 'not_started' });
+  }
+
+  const response = {
+    status: oauthState.status,
+    userCode: oauthState.userCode,
+    verificationUri: oauthState.verificationUri,
+    startedAt: oauthState.startedAt
+  };
+
+  if (oauthState.status === 'authorized') {
+    response.authorizedAt = oauthState.authorizedAt;
+  } else if (oauthState.status === 'error') {
+    response.error = oauthState.error;
+  }
+
+  res.json(response);
+});
+
+// Cancel OAuth flow
+app.post('/api/copilot/auth/cancel', (req, res) => {
+  oauthState = null;
+  res.json({ success: true, message: 'OAuth flow cancelled' });
+});
+
 
 
 // Middleware для логування запитів
@@ -743,7 +850,7 @@ async function handle429Error(error, model) {
   const retryAfter = Number(headers['retry-after'] || headers['x-ratelimit-timeremaining'] || 0);
   const limitType = headers['x-ratelimit-type'] || 'unknown';
   
-  console.error(`[429-ERROR] Rate limit досягнуто для моделі ${model}:`, error?.message);
+  console.error(`[429-ERROR] Rate limit досягнуто для моделі ${model}:`, maskSensitiveData(error?.message));
   console.error(`[429-ERROR] Тип ліміту: ${limitType}, retry-after: ${retryAfter}s`);
   
   // Якщо це денний ліміт - блокуємо модель на довгий час
@@ -2209,7 +2316,8 @@ async function handleChatCompletions(req, res) {
         return res.json(response);
       }
     } catch (error) {
-      console.error(`[PROVIDERS] Error from ${provider.name}:`, error);
+      const safeErrorMessage = maskSensitiveData(error?.message || error?.toString?.());
+      console.error(`[PROVIDERS] Error from ${provider.name}:`, safeErrorMessage);
       const statusCode = error?.status || 500;
       
       const duration = Date.now() - requestStartTime;
@@ -2219,7 +2327,7 @@ async function handleChatCompletions(req, res) {
         source: req.ip || req.connection?.remoteAddress || 'unknown',
         model: model,
         type: 'error',
-        message: error.message || 'Provider error',
+        message: safeErrorMessage || 'Provider error',
         statusCode: statusCode,
         duration: duration,
         provider: provider.name,
@@ -2228,7 +2336,7 @@ async function handleChatCompletions(req, res) {
       
       return res.status(statusCode).json({
         error: {
-          message: error.message || 'Provider error',
+          message: safeErrorMessage || 'Provider error',
           type: 'provider_error',
           provider: provider.name,
           code: error.code || null
@@ -2308,7 +2416,7 @@ async function handleChatCompletions(req, res) {
       }
       
       // Логування деталей помилки
-      console.error(`[ERROR] Streaming error: ${statusCode} - ${err?.message || 'Unknown'}`, {
+      console.error(`[ERROR] Streaming error: ${statusCode} - ${maskSensitiveData(err?.message || 'Unknown')}`, {
         model,
         errorCode: err?.code || err?.error?.code,
         errorType: statusCode === 429 ? 'rate_limit' : statusCode === 400 ? 'bad_request' : statusCode === 403 ? 'forbidden' : 'unknown'
@@ -2322,7 +2430,7 @@ async function handleChatCompletions(req, res) {
         const retryAfter = Number(headers['retry-after'] || headers['x-ratelimit-timeremaining'] || 0);
         if(is429 && retryAfter){ res.setHeader('Retry-After', String(retryAfter)); }
         const limitType = headers['x-ratelimit-type'] || null;
-        const baseMessage = err?.message || String(err);
+        const baseMessage = maskSensitiveData(err?.message || String(err));
         const message = is429 ? `Upstream rate limit reached (${limitType||'unknown'}). Retry after ~${retryAfter}s.` : baseMessage;
         const errorResponse = {
           error: {
@@ -2348,7 +2456,7 @@ async function handleChatCompletions(req, res) {
         return res.status(statusCode).json(errorResponse);
       } else {
         // Headers already sent (SSE stream started), send error via SSE
-        const errorMessage = err?.message || err?.error?.message || String(err);
+        const errorMessage = maskSensitiveData(err?.message || err?.error?.message || String(err));
         const errorEvent = {
           error: {
             message: errorMessage,
@@ -2364,7 +2472,7 @@ async function handleChatCompletions(req, res) {
         }
       }
       try { res.end(); } catch (_) {}
-      logRequest(statusCode, err?.message || 'Streaming error', {
+      logRequest(statusCode, maskSensitiveData(err?.message) || 'Streaming error', {
         errorType: statusCode === 429 ? 'rate_limit' : statusCode === 400 ? 'bad_request' : statusCode === 403 ? 'forbidden' : 'unknown',
         errorCode: err?.code || err?.error?.code
       });
