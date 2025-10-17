@@ -656,6 +656,7 @@
             <button class="tab" data-tab="logs">📝 Логи</button>
             <button class="tab" data-tab="stream">📜 Повні логи</button>
             <button class="tab" data-tab="models">🤖 Моделі</button>
+            <button class="tab" data-tab="providers">🔌 Провайдери</button>
         </div>
         
         <div class="content">
@@ -771,6 +772,23 @@
                         <div class="loading">
                             <div class="spinner"></div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Providers Tab -->
+            <div class="tab-content" id="providers">
+                <div class="providers-header" style="margin-bottom: 20px;">
+                    <h2 style="font-size: 20px; margin-bottom: 10px;">🔌 Зовнішні провайдери</h2>
+                    <p style="color: var(--text-secondary); font-size: 14px;">
+                        Конфігурація та управління зовнішніми LLM провайдерами. 
+                        Моделі від цих провайдерів мають префікс "ext-" для ідентифікації.
+                    </p>
+                </div>
+
+                <div id="providersContainer">
+                    <div class="loading">
+                        <div class="spinner"></div>
                     </div>
                 </div>
             </div>
@@ -1053,9 +1071,13 @@
                     content.classList.toggle('active', content.id === tabName);
                 });
                 
-                // Start stream if switching to stream tab
+                // Load data for specific tabs
                 if (tabName === 'stream' && !this.streamInterval) {
                     this.startStreamLogs();
+                }
+                
+                if (tabName === 'providers') {
+                    this.loadProviders();
                 }
             }
             
@@ -1086,6 +1108,160 @@
                     this.renderModels(data.data || []);
                 } catch (error) {
                     console.error('Error loading models:', error);
+                }
+            }
+
+            async loadProviders() {
+                try {
+                    const response = await fetch('/api/monitoring/providers');
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        this.renderProviders(data);
+                    } else {
+                        console.error('Error loading providers:', data.error);
+                    }
+                } catch (error) {
+                    console.error('Error loading providers:', error);
+                }
+            }
+
+            renderProviders(data) {
+                const container = document.getElementById('providersContainer');
+                
+                if (!data.providers || data.providers.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔌</div><div>Провайдери не налаштовані</div></div>';
+                    return;
+                }
+
+                const html = data.providers.map(provider => {
+                    const statusColor = provider.configured ? 
+                        (provider.enabled ? 'var(--success)' : 'var(--warning)') : 
+                        'var(--error)';
+                    const statusText = provider.configured ? 
+                        (provider.enabled ? '🟢 Активний' : '🟡 Вимкнено') : 
+                        '🔴 Не налаштовано';
+                    const errors = provider.errors && provider.errors.length > 0 ? 
+                        `<div style="color: var(--error); font-size: 12px; margin-top: 8px;">⚠️ ${provider.errors.join(', ')}</div>` : 
+                        '';
+
+                    return `
+                        <div class="stat-card" style="margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                                <div>
+                                    <div style="font-size: 18px; font-weight: 600; color: var(--text-primary);">
+                                        ${provider.name.charAt(0).toUpperCase() + provider.name.slice(1)}
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                                        Префікс моделей: ext-${provider.name}-
+                                    </div>
+                                </div>
+                                <div style="color: ${statusColor}; font-size: 14px; font-weight: 500;">
+                                    ${statusText}
+                                </div>
+                            </div>
+                            ${errors}
+                            <div style="display: flex; gap: 8px; margin-top: 12px;">
+                                <button 
+                                    class="refresh-btn" 
+                                    style="flex: 1; font-size: 13px; padding: 8px 12px;"
+                                    onclick="monitor.configureProvider('${provider.name}')"
+                                >
+                                    ⚙️ Налаштувати
+                                </button>
+                                <button 
+                                    class="refresh-btn" 
+                                    style="flex: 1; font-size: 13px; padding: 8px 12px; background: var(--info);"
+                                    onclick="monitor.testProvider('${provider.name}')"
+                                    ${!provider.configured ? 'disabled' : ''}
+                                >
+                                    🧪 Тест
+                                </button>
+                                <button 
+                                    class="refresh-btn" 
+                                    style="flex: 1; font-size: 13px; padding: 8px 12px; background: var(--accent-dim); color: var(--accent);"
+                                    onclick="monitor.viewProviderModels('${provider.name}')"
+                                    ${!provider.configured ? 'disabled' : ''}
+                                >
+                                    📋 Моделі
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px;">
+                        ${html}
+                    </div>
+                `;
+            }
+
+            async configureProvider(providerName) {
+                const apiKey = prompt(`Введіть API ключ для ${providerName}:`);
+                if (!apiKey) return;
+
+                const enabled = confirm(`Увімкнути провайдер ${providerName}?`);
+
+                try {
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/config`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            apiKey,
+                            enabled
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(`✅ Провайдер ${providerName} налаштовано успішно!`);
+                        await this.loadProviders();
+                    } else {
+                        alert(`❌ Помилка: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error configuring provider:', error);
+                    alert(`❌ Помилка налаштування провайдера: ${error.message}`);
+                }
+            }
+
+            async testProvider(providerName) {
+                try {
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/test`, {
+                        method: 'POST'
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(`✅ Провайдер ${providerName} працює!\n\nКількість моделей: ${data.models_count}\nПриклади: ${data.sample_models.map(m => m.id).join(', ')}`);
+                    } else {
+                        alert(`❌ Помилка тестування: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error testing provider:', error);
+                    alert(`❌ Помилка тестування провайдера: ${error.message}`);
+                }
+            }
+
+            async viewProviderModels(providerName) {
+                try {
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/models`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        const modelsList = data.models.map(m => `- ${m.id}`).join('\n');
+                        alert(`📋 Моделі ${providerName} (${data.count}):\n\n${modelsList.substring(0, 500)}${data.count > 10 ? '\n\n... та інші' : ''}`);
+                    } else {
+                        alert(`❌ Помилка: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error fetching provider models:', error);
+                    alert(`❌ Помилка отримання моделей: ${error.message}`);
                 }
             }
             
@@ -1434,8 +1610,9 @@
             }
         }
         
-        // Initialize monitor
-        new ATLASMonitor();
+        // Initialize monitor and expose globally for onclick handlers
+        const monitor = new ATLASMonitor();
+        window.monitor = monitor;
     </script>
 </body>
 </html>

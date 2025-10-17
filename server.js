@@ -8,12 +8,18 @@ import { ModelLimitsHandler } from "./model-limits-utils.mjs";
 import os from 'os';
 import { createClient as createRedisClient } from 'redis';
 import { getTokenRotator } from './token-rotator.mjs';
+import { initializeProviders } from './providers/index.mjs';
 
 // ES modules equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config();
+
+// Ініціалізація провайдерів
+console.log('[PROVIDERS] Ініціалізація системи провайдерів...');
+const { registry: providerRegistry, configManager: providerConfigManager } = initializeProviders();
+console.log('[PROVIDERS] Система провайдерів ініціалізована');
 
 // Моделі які НЕ підтримують temperature parameter
 const MODELS_WITHOUT_TEMPERATURE = [
@@ -205,6 +211,138 @@ app.get('/api/monitoring/debug-token', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ===== PROVIDER MANAGEMENT ENDPOINTS =====
+
+// Get provider status
+app.get('/api/monitoring/providers', (req, res) => {
+  try {
+    const status = providerRegistry.getStatus();
+    const availableTypes = providerRegistry.getAvailableProviderTypes();
+    
+    res.json({
+      success: true,
+      providers: status,
+      available_types: availableTypes,
+      total: status.length,
+      enabled: status.filter(p => p.enabled).length,
+      configured: status.filter(p => p.configured).length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update provider configuration
+app.post('/api/monitoring/providers/:name/config', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const config = req.body;
+    
+    console.log(`[PROVIDERS] Updating configuration for ${name}:`, config);
+    
+    // Update configuration
+    const success = providerConfigManager.updateProviderConfig(name, config);
+    if (!success) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Failed to update configuration' 
+      });
+    }
+    
+    // Save to .env
+    providerConfigManager.saveConfig();
+    
+    // Reinitialize provider
+    const ProviderClass = providerRegistry.availableProviders[name];
+    if (!ProviderClass) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    const provider = new ProviderClass(config);
+    providerRegistry.register(name, provider);
+    
+    res.json({
+      success: true,
+      message: `Provider ${name} configuration updated`,
+      status: provider.getStatus()
+    });
+  } catch (error) {
+    console.error('[PROVIDERS] Error updating configuration:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test provider connection
+app.post('/api/monitoring/providers/:name/test', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    // Validate configuration
+    const validation = provider.validate();
+    if (!validation.valid) {
+      return res.json({
+        success: false,
+        error: 'Configuration invalid',
+        errors: validation.errors
+      });
+    }
+    
+    // Try to fetch models
+    const models = await provider.getModels();
+    
+    res.json({
+      success: true,
+      message: `Provider ${name} is working`,
+      models_count: models.length,
+      sample_models: models.slice(0, 5)
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Test failed for ${name}:`, error);
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get provider models
+app.get('/api/monitoring/providers/:name/models', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    const models = await provider.getModels();
+    
+    res.json({
+      success: true,
+      provider: name,
+      models: models,
+      count: models.length
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error fetching models for ${name}:`, error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1829,6 +1967,96 @@ async function handleChatCompletions(req, res) {
 
   console.log(`[OPENAI-STD] Chat completions request for model: "${model}"`);
   
+  // Перевірка чи запит для провайдера
+  const provider = providerRegistry.findProviderForModel(model);
+  if (provider) {
+    console.log(`[PROVIDERS] Маршрутизація до провайдера: ${provider.name}`);
+    try {
+      if (stream) {
+        // Streaming response from provider
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders?.();
+
+        const streamGen = provider.streamChatCompletion({
+          model,
+          messages,
+          ...otherOptions
+        });
+
+        for await (const chunk of streamGen) {
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+        res.write('data: [DONE]\n\n');
+        res.end();
+        
+        const duration = Date.now() - requestStartTime;
+        addRequestLog({
+          method: 'POST',
+          endpoint: '/v1/chat/completions',
+          source: req.ip || req.connection?.remoteAddress || 'unknown',
+          model: model,
+          type: 'success',
+          message: `Provider request completed (${duration}ms)`,
+          statusCode: 200,
+          duration: duration,
+          provider: provider.name
+        });
+        return;
+      } else {
+        // Non-streaming response from provider
+        const response = await provider.chatCompletion({
+          model,
+          messages,
+          stream: false,
+          ...otherOptions
+        });
+
+        const duration = Date.now() - requestStartTime;
+        addRequestLog({
+          method: 'POST',
+          endpoint: '/v1/chat/completions',
+          source: req.ip || req.connection?.remoteAddress || 'unknown',
+          model: model,
+          type: 'success',
+          message: `Provider request completed (${duration}ms)`,
+          statusCode: 200,
+          duration: duration,
+          provider: provider.name
+        });
+        
+        return res.json(response);
+      }
+    } catch (error) {
+      console.error(`[PROVIDERS] Error from ${provider.name}:`, error);
+      const statusCode = error?.status || 500;
+      
+      const duration = Date.now() - requestStartTime;
+      addRequestLog({
+        method: 'POST',
+        endpoint: '/v1/chat/completions',
+        source: req.ip || req.connection?.remoteAddress || 'unknown',
+        model: model,
+        type: 'error',
+        message: error.message || 'Provider error',
+        statusCode: statusCode,
+        duration: duration,
+        provider: provider.name,
+        errorType: 'provider_error'
+      });
+      
+      return res.status(statusCode).json({
+        error: {
+          message: error.message || 'Provider error',
+          type: 'provider_error',
+          provider: provider.name,
+          code: error.code || null
+        }
+      });
+    }
+  }
+  
   // Функція для логування результату запиту
   const logRequest = (statusCode, errorMessage = null, errorDetails = {}) => {
     const duration = Date.now() - requestStartTime;
@@ -2131,7 +2359,19 @@ async function handleModelsList(req, res) {
     { id: "xai/grok-3-mini", object: "model", created: 1677610602, owned_by: "xai" }
   ];
 
-  const data = models.map(m => {
+  // Додаємо моделі з зовнішніх провайдерів
+  let providerModels = [];
+  try {
+    providerModels = await providerRegistry.getAllModels();
+    console.log(`[PROVIDERS] Отримано ${providerModels.length} моделей з провайдерів`);
+  } catch (error) {
+    console.error('[PROVIDERS] Помилка отримання моделей:', error);
+  }
+
+  // Об'єднуємо моделі GitHub та провайдерів
+  const allModels = [...models, ...providerModels];
+
+  const data = allModels.map(m => {
     const base = MODEL_RATE_LIMITS[m.id] || DEFAULT_MODEL_RATE_LIMIT;
     if(ADAPTIVE_RATE_LIMITS){
       const s = adaptiveModelStats.get(m.id);
@@ -2157,7 +2397,16 @@ async function handleModelsList(req, res) {
     return { ...m, rate_limit: { ...base, daily_requests: daily?daily.count:0, daily_errors: daily?daily.errors:0, hours_until_reset: hoursUntilUtcReset(), approximate: true } };
   });
 
-  res.json({ object: 'list', data, meta: { rate_limit_disclaimer: 'Values are heuristic / approximate; real upstream provider limits may vary.' } });
+  res.json({ 
+    object: 'list', 
+    data, 
+    meta: { 
+      rate_limit_disclaimer: 'Values are heuristic / approximate; real upstream provider limits may vary.',
+      github_models: models.length,
+      provider_models: providerModels.length,
+      total_models: allModels.length
+    } 
+  });
 }
 
 // Alias for compatibility (only in non-strict mode)
