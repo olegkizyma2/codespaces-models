@@ -73,8 +73,9 @@ cookbooks/python/openai/data/hotel_invoices/hotel_DB.db
 cookbooks/python/openai/hallucination_results.csv
 
 # Cache
-# .cache directory is now safe to commit (no tokens stored)
-# Token is stored only in .env file
+# .cache directory contains short-lived Copilot API tokens (25min expiry)
+# These tokens are safe but should not be in Git
+.cache/
 .eslintcache
 
 # Coverage
