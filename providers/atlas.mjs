@@ -7,6 +7,20 @@ import { Provider } from './base.mjs';
 import OpenAI from 'openai';
 
 export class ATLASProvider extends Provider {
+  /**
+   * Перевизначає чи цей провайдер обробляє модель (з префіксом або без)
+   */
+  handlesModel(modelName) {
+    if (!modelName) return false;
+    // Дозволяємо як atlas-<model>, так і просто <model> з getGitHubModels
+    if (modelName.startsWith(this.modelPrefix)) return true;
+    // Без префікса, але є в списку моделей (без префікса)
+    const allModels = this.getGitHubModels().map(m => {
+      const parts = m.split('/');
+      return parts[1] || parts[0];
+    });
+    return allModels.includes(modelName);
+  }
   constructor(config = {}) {
     super({
       name: 'atlas',
@@ -193,7 +207,16 @@ export class ATLASProvider extends Provider {
 
   async chatCompletion(params) {
     const { model, messages, temperature, max_tokens, stream = false, ...rest } = params;
-    const originalModel = this.getOriginalModelName(model);
+    // Дозволяємо як atlas-<model>, так і просто <model> (без префікса)
+    let originalModel = this.getOriginalModelName(model);
+    // Якщо model не містить префікса і не містить '/', але є в списку моделей — знайти повний id
+    if (!model.startsWith(this.modelPrefix) && !model.includes('/')) {
+      const found = this.getGitHubModels().find(m => {
+        const parts = m.split('/');
+        return parts[1] === model;
+      });
+      if (found) originalModel = found;
+    }
     const token = this.getCurrentToken();
 
     if (!token) {

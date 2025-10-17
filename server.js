@@ -2691,7 +2691,12 @@ async function handleModelsList(req, res) {
   // Об'єднуємо моделі GitHub та провайдерів
   const allModels = [...models, ...providerModels];
 
+  const useShort = req.query.short === '1' || req.query.short === 'true';
   const data = allModels.map(m => {
+    let id = m.id;
+    if (useShort && m.provider === 'atlas' && id && id.startsWith('atlas-')) {
+      id = id.replace(/^atlas-/, '');
+    }
     const base = MODEL_RATE_LIMITS[m.id] || DEFAULT_MODEL_RATE_LIMIT;
     if(ADAPTIVE_RATE_LIMITS){
       const s = adaptiveModelStats.get(m.id);
@@ -2699,6 +2704,7 @@ async function handleModelsList(req, res) {
         const daily = dailyModelUsage.get(m.id);
         return {
           ...m,
+          id,
           rate_limit: {
             ...base,
             adaptive_guess: s.guess,
@@ -2714,7 +2720,7 @@ async function handleModelsList(req, res) {
       }
     }
     const daily = dailyModelUsage.get(m.id);
-    return { ...m, rate_limit: { ...base, daily_requests: daily?daily.count:0, daily_errors: daily?daily.errors:0, hours_until_reset: hoursUntilUtcReset(), approximate: true } };
+    return { ...m, id, rate_limit: { ...base, daily_requests: daily?daily.count:0, daily_errors: daily?daily.errors:0, hours_until_reset: hoursUntilUtcReset(), approximate: true } };
   });
 
   res.json({ 
