@@ -2,7 +2,7 @@
 
 import 'dotenv/config';
 
-const token = '[REDACTED_GITHUB_PAT]';
+const token = process.env.ATLAS_TOKEN || '';
 const baseURL = 'https://models.inference.ai.azure.com';
 
 const models = process.argv.slice(2);
