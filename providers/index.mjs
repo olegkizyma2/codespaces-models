@@ -14,6 +14,11 @@ import { GoogleProvider } from './google.mjs';
 import { OpenRouterProvider } from './openrouter.mjs';
 import { LiteLLMProvider } from './litellm.mjs';
 import { XAIProvider } from './xai.mjs';
+import { GitHubCopilotProvider } from './githubcopilot.mjs';
+import { ClaudeCodeProvider } from './claude_code.mjs';
+import { CursorAgentProvider } from './cursor_agent.mjs';
+import { LeadWorkerProvider } from './lead_worker.mjs';
+import { ATLASProvider } from './atlas.mjs';
 import { ProviderRegistry } from './registry.mjs';
 import { ProviderConfigManager } from './config.mjs';
 
@@ -27,6 +32,11 @@ export {
   OpenRouterProvider,
   LiteLLMProvider,
   XAIProvider,
+  GitHubCopilotProvider,
+  ClaudeCodeProvider,
+  CursorAgentProvider,
+  LeadWorkerProvider,
+  ATLASProvider,
   ProviderRegistry,
   ProviderConfigManager
 };
@@ -58,6 +68,11 @@ export default {
   OpenRouterProvider,
   LiteLLMProvider,
   XAIProvider,
+  GitHubCopilotProvider,
+  ClaudeCodeProvider,
+  CursorAgentProvider,
+  LeadWorkerProvider,
+  ATLASProvider,
   ProviderRegistry,
   ProviderConfigManager,
   initializeProviders
