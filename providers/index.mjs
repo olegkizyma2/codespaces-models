@@ -12,6 +12,8 @@ import { AzureProvider } from './azure.mjs';
 import { OllamaProvider } from './ollama.mjs';
 import { GoogleProvider } from './google.mjs';
 import { OpenRouterProvider } from './openrouter.mjs';
+import { LiteLLMProvider } from './litellm.mjs';
+import { XAIProvider } from './xai.mjs';
 import { ProviderRegistry } from './registry.mjs';
 import { ProviderConfigManager } from './config.mjs';
 
@@ -23,6 +25,8 @@ export {
   OllamaProvider,
   GoogleProvider,
   OpenRouterProvider,
+  LiteLLMProvider,
+  XAIProvider,
   ProviderRegistry,
   ProviderConfigManager
 };
@@ -52,6 +56,8 @@ export default {
   OllamaProvider,
   GoogleProvider,
   OpenRouterProvider,
+  LiteLLMProvider,
+  XAIProvider,
   ProviderRegistry,
   ProviderConfigManager,
   initializeProviders

@@ -52,6 +52,16 @@ export class ProviderConfigManager {
           enabled: this.getBoolEnv('OPENROUTER_ENABLED', false),
           apiKey: process.env.OPENROUTER_API_KEY,
           baseURL: process.env.OPENROUTER_BASE_URL
+        },
+        litellm: {
+          enabled: this.getBoolEnv('LITELLM_ENABLED', false),
+          apiKey: process.env.LITELLM_API_KEY,
+          baseURL: process.env.LITELLM_BASE_URL
+        },
+        xai: {
+          enabled: this.getBoolEnv('XAI_ENABLED', false),
+          apiKey: process.env.XAI_API_KEY,
+          baseURL: process.env.XAI_BASE_URL
         }
       };
 
@@ -184,7 +194,9 @@ export class ProviderConfigManager {
       'azure': 'AZURE_OPENAI',
       'ollama': 'OLLAMA',
       'google': 'GOOGLE_AI',
-      'openrouter': 'OPENROUTER'
+      'openrouter': 'OPENROUTER',
+      'litellm': 'LITELLM',
+      'xai': 'XAI'
     };
     return prefixMap[providerName] || providerName.toUpperCase();
   }

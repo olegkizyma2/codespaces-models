@@ -7,6 +7,8 @@ import { AzureProvider } from './azure.mjs';
 import { OllamaProvider } from './ollama.mjs';
 import { GoogleProvider } from './google.mjs';
 import { OpenRouterProvider } from './openrouter.mjs';
+import { LiteLLMProvider } from './litellm.mjs';
+import { XAIProvider } from './xai.mjs';
 
 export class ProviderRegistry {
   constructor() {
@@ -17,7 +19,9 @@ export class ProviderRegistry {
       'azure': AzureProvider,
       'ollama': OllamaProvider,
       'google': GoogleProvider,
-      'openrouter': OpenRouterProvider
+      'openrouter': OpenRouterProvider,
+      'litellm': LiteLLMProvider,
+      'xai': XAIProvider
     };
   }
 
