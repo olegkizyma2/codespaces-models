@@ -9,6 +9,11 @@ import { GoogleProvider } from './google.mjs';
 import { OpenRouterProvider } from './openrouter.mjs';
 import { LiteLLMProvider } from './litellm.mjs';
 import { XAIProvider } from './xai.mjs';
+import { GitHubCopilotProvider } from './githubcopilot.mjs';
+import { ClaudeCodeProvider } from './claude_code.mjs';
+import { CursorAgentProvider } from './cursor_agent.mjs';
+import { LeadWorkerProvider } from './lead_worker.mjs';
+import { ATLASProvider } from './atlas.mjs';
 
 export class ProviderRegistry {
   constructor() {
@@ -21,7 +26,12 @@ export class ProviderRegistry {
       'google': GoogleProvider,
       'openrouter': OpenRouterProvider,
       'litellm': LiteLLMProvider,
-      'xai': XAIProvider
+      'xai': XAIProvider,
+      'githubcopilot': GitHubCopilotProvider,
+      'claude_code': ClaudeCodeProvider,
+      'cursor_agent': CursorAgentProvider,
+      'lead_worker': LeadWorkerProvider,
+      'atlas': ATLASProvider
     };
   }
 

@@ -62,6 +62,31 @@ export class ProviderConfigManager {
           enabled: this.getBoolEnv('XAI_ENABLED', false),
           apiKey: process.env.XAI_API_KEY,
           baseURL: process.env.XAI_BASE_URL
+        },
+        githubcopilot: {
+          enabled: this.getBoolEnv('GITHUB_COPILOT_ENABLED', false),
+          apiKey: process.env.GITHUB_COPILOT_API_KEY,
+          baseURL: process.env.GITHUB_COPILOT_BASE_URL
+        },
+        claude_code: {
+          enabled: this.getBoolEnv('CLAUDE_CODE_ENABLED', false),
+          apiKey: process.env.CLAUDE_CODE_API_KEY,
+          baseURL: process.env.CLAUDE_CODE_BASE_URL
+        },
+        cursor_agent: {
+          enabled: this.getBoolEnv('CURSOR_AGENT_ENABLED', false),
+          apiKey: process.env.CURSOR_AGENT_API_KEY,
+          baseURL: process.env.CURSOR_AGENT_BASE_URL
+        },
+        lead_worker: {
+          enabled: this.getBoolEnv('LEAD_WORKER_ENABLED', false),
+          apiKey: process.env.LEAD_WORKER_API_KEY,
+          baseURL: process.env.LEAD_WORKER_BASE_URL
+        },
+        atlas: {
+          enabled: this.getBoolEnv('ATLAS_ENABLED', false),
+          apiKey: process.env.GITHUB_TOKEN,
+          baseURL: process.env.ATLAS_BASE_URL
         }
       };
 
@@ -196,7 +221,12 @@ export class ProviderConfigManager {
       'google': 'GOOGLE_AI',
       'openrouter': 'OPENROUTER',
       'litellm': 'LITELLM',
-      'xai': 'XAI'
+      'xai': 'XAI',
+      'githubcopilot': 'GITHUB_COPILOT',
+      'claude_code': 'CLAUDE_CODE',
+      'cursor_agent': 'CURSOR_AGENT',
+      'lead_worker': 'LEAD_WORKER',
+      'atlas': 'ATLAS'
     };
     return prefixMap[providerName] || providerName.toUpperCase();
   }
