@@ -57,34 +57,34 @@ export class GitHubCopilotProvider extends Provider {
   }
 
   /**
-   * Load token from .env and metadata from cache
+   * Load Copilot API token from cache and OAuth token from .env
    */
   async loadCachedToken() {
     try {
-      // Always read token from .env
+      // Always need OAuth token in .env (for refreshing Copilot token)
       const envToken = process.env.GITHUB_COPILOT_TOKEN;
-      if (!envToken) {
+      if (!envToken || envToken === 'your_copilot_token_here') {
         return false;
       }
 
-      // Try to load metadata (endpoints, expiry) from cache
+      // Try to load Copilot API token from cache
       try {
         const data = await fs.readFile(this.cacheFile, 'utf8');
         const cached = JSON.parse(data);
         
-        if (new Date(cached.expires_at) > new Date()) {
-          this.tokenCache = envToken; // Use token from .env, not cache
+        if (cached.token && new Date(cached.expires_at) > new Date()) {
+          // Use cached Copilot API token (short-lived, safe to cache)
+          this.tokenCache = cached.token;
           this.tokenExpiry = new Date(cached.expires_at);
           this.apiEndpoint = cached.info.endpoints?.api;
           return true;
         }
       } catch (err) {
-        // Cache doesn't exist or is invalid - that's OK
+        // Cache doesn't exist or expired - need to refresh
       }
 
-      // If we have token but no valid cache, use token anyway
-      this.tokenCache = envToken;
-      return true;
+      // No valid cache - need to get new Copilot token from API
+      return false;
     } catch (err) {
       console.error('[GITHUB-COPILOT] Error loading token:', err);
     }
@@ -92,7 +92,8 @@ export class GitHubCopilotProvider extends Provider {
   }
 
   /**
-   * Save metadata to cache (without token - token stays in .env only)
+   * Save metadata to cache (with Copilot API token - safe, expires in 25min)
+   * OAuth token stays in .env only
    */
   async saveTokenCache(info) {
     try {
@@ -101,8 +102,9 @@ export class GitHubCopilotProvider extends Provider {
       
       const expiresAt = new Date(Date.now() + info.refresh_in * 1000);
       
-      // Save only metadata, NOT the token
+      // Save Copilot API token (short-lived, safe) + metadata
       const cacheData = {
+        token: info.token, // Copilot API token (NOT OAuth token)
         expires_at: expiresAt.toISOString(),
         info: {
           endpoints: info.endpoints,
@@ -110,14 +112,13 @@ export class GitHubCopilotProvider extends Provider {
           refresh_in: info.refresh_in,
           sku: info.sku,
           chat_enabled: info.chat_enabled,
-          // NO TOKEN - it stays in .env only
         }
       };
       
       await fs.writeFile(this.cacheFile, JSON.stringify(cacheData, null, 2));
       
-      // Use token from .env
-      this.tokenCache = process.env.GITHUB_COPILOT_TOKEN || info.token;
+      // Use Copilot API token (from API response, not .env)
+      this.tokenCache = info.token;
       this.tokenExpiry = expiresAt;
       this.apiEndpoint = info.endpoints.api;
     } catch (err) {

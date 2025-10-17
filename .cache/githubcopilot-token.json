@@ -1,5 +1,6 @@
 {
-  "expires_at": "2025-10-17T19:53:58.017Z",
+  "token": "tid=4988c5ac6e5d29bc525d09c5903beba1;exp=1760734076;sku=monthly_subscriber_quota;proxy-ep=proxy.individual.githubcopilot.com;st=dotcom;chat=1;cit=1;malfil=1;editor_preview_features=1;agent_mode=1;mcp=1;ccr=1;rt=1;8kp=1;ip=185.94.219.55;asn=AS35166:9ab67e4cfa1556d5d07dd1a4829c53cdba6a14e2c788f9c1f7ed917d1c3818f3",
+  "expires_at": "2025-10-17T20:42:56.578Z",
   "info": {
     "endpoints": {
       "api": "https://api.individual.githubcopilot.com",
@@ -7,7 +8,7 @@
       "proxy": "https://proxy.individual.githubcopilot.com",
       "telemetry": "https://telemetry.individual.githubcopilot.com"
     },
-    "expires_at": 1760731137,
+    "expires_at": 1760734076,
     "refresh_in": 1500,
     "sku": "monthly_subscriber_quota",
     "chat_enabled": true
