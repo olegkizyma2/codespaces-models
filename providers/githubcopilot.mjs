@@ -3,7 +3,7 @@
  * Real GitHub Copilot API integration (like Goose)
  * Uses OAuth Device Code Flow for authentication
  */
-import { Provider } from './base.mjs';
+import { Provider, ProviderMetadata, ModelInfo, ProviderUsage, ProviderError } from './base.mjs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -28,6 +28,41 @@ const GITHUB_COPILOT_KNOWN_MODELS = [
 ];
 
 export class GitHubCopilotProvider extends Provider {
+  /**
+   * Returns provider metadata following Goose architecture
+   */
+  static metadata() {
+    return ProviderMetadata.create(
+      'githubcopilot',
+      'GitHub Copilot',
+      'Real GitHub Copilot API with OAuth authentication',
+      'gpt-4o',
+      GITHUB_COPILOT_KNOWN_MODELS.map(name => new ModelInfo({ name })),
+      'https://github.com/features/copilot',
+      [
+        { name: 'GITHUB_COPILOT_TOKEN', required: true, description: 'GitHub OAuth token for Copilot' }
+      ]
+    );
+  }
+
+  /**
+   * Creates provider instance from environment variables
+   */
+  static fromEnv(modelConfig = {}) {
+    const token = process.env.GITHUB_COPILOT_TOKEN;
+    
+    if (!token || token === 'your_copilot_token_here') {
+      throw ProviderError.authError(
+        'GitHub Copilot requires GITHUB_COPILOT_TOKEN environment variable'
+      );
+    }
+
+    return new GitHubCopilotProvider({
+      apiKey: token,
+      ...modelConfig
+    });
+  }
+
   constructor(config = {}) {
     super({
       name: 'githubcopilot',
@@ -41,6 +76,45 @@ export class GitHubCopilotProvider extends Provider {
     this.tokenExpiry = null;
     this.apiEndpoint = null;
     this.cacheFile = path.join(__dirname, '..', '.cache', 'githubcopilot-token.json');
+  }
+
+  /**
+   * Extracts usage information from GitHub Copilot API response
+   */
+  extractUsage(response) {
+    const usage = response?.usage;
+    if (!usage) return null;
+
+    return ProviderUsage.create('githubcopilot', {
+      inputTokens: usage.prompt_tokens || 0,
+      outputTokens: usage.completion_tokens || 0,
+      totalTokens: usage.total_tokens || 0
+    });
+  }
+
+  /**
+   * Handles GitHub Copilot-specific errors
+   */
+  handleError(error) {
+    const message = error.message || String(error);
+    
+    // GitHub authentication errors
+    if (message.includes('401') || message.includes('Unauthorized') || message.includes('invalid_token')) {
+      throw ProviderError.authError('GitHub Copilot authentication failed. Check your GITHUB_COPILOT_TOKEN.');
+    }
+    
+    // Rate limiting
+    if (message.includes('429') || message.includes('Rate limit')) {
+      throw ProviderError.rateLimitError('GitHub Copilot rate limit exceeded. Please retry later.');
+    }
+    
+    // Context length errors
+    if (message.includes('context_length') || message.includes('maximum context length')) {
+      throw ProviderError.contextLengthError('Request exceeds GitHub Copilot model context length.');
+    }
+    
+    // Generic GitHub Copilot API error
+    throw ProviderError.apiError(`GitHub Copilot API error: ${message}`);
   }
 
   /**
