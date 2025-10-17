@@ -652,14 +652,101 @@
         
         <div class="tabs">
             <button class="tab active" data-tab="overview">📈 Огляд</button>
+            <button class="tab" data-tab="chat">💬 Чат</button>
+            <button class="tab" data-tab="copilot-auth">🔐 GitHub Copilot</button>
             <button class="tab" data-tab="tokens">🔑 Токени</button>
             <button class="tab" data-tab="logs">📝 Логи</button>
             <button class="tab" data-tab="stream">📜 Повні логи</button>
             <button class="tab" data-tab="models">🤖 Моделі</button>
             <button class="tab" data-tab="providers">🔌 Провайдери</button>
+            <a href="/" class="tab" style="text-decoration: none; display: flex; align-items: center;">🏠 Головна</a>
         </div>
         
         <div class="content">
+            <!-- Chat Tab -->
+            <div class="tab-content" id="chat">
+                <iframe src="/" style="width: 100%; height: calc(100vh - 160px); border: none; border-radius: 12px; background: var(--bg-secondary);"></iframe>
+            </div>
+
+            <!-- GitHub Copilot Auth Tab -->
+            <div class="tab-content" id="copilot-auth">
+                <div style="max-width: 800px; margin: 0 auto;">
+                    <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 32px; margin-bottom: 24px;">
+                        <div style="text-align: center; margin-bottom: 32px;">
+                            <div style="font-size: 64px; margin-bottom: 16px;">🔐</div>
+                            <h2 style="font-size: 28px; margin-bottom: 12px; color: var(--text-primary);">GitHub Copilot Authentication</h2>
+                            <p style="color: var(--text-secondary); font-size: 15px;">Автентифікація для доступу до GitHub Copilot API</p>
+                        </div>
+
+                        <div id="copilot-initial-screen">
+                            <div style="background: var(--accent-dim); border: 2px solid var(--accent); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                                <strong style="color: var(--accent); font-size: 15px;">📋 Інструкції:</strong>
+                                <ol style="margin: 12px 0 0 20px; color: var(--text-primary); line-height: 1.8;">
+                                    <li>Натисніть кнопку "Розпочати авторизацію"</li>
+                                    <li>Відкрийте посилання на GitHub</li>
+                                    <li>Введіть код авторизації</li>
+                                    <li>Підтвердьте доступ</li>
+                                </ol>
+                            </div>
+                            
+                            <button id="startCopilotAuth" style="width: 100%; padding: 16px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s;">
+                                🚀 Розпочати авторизацію
+                            </button>
+                        </div>
+
+                        <div id="copilot-auth-screen" style="display: none;">
+                            <div style="background: var(--bg-tertiary); border: 2px dashed var(--border); border-radius: 12px; padding: 32px; margin: 24px 0; text-align: center;">
+                                <div id="copilot-user-code" style="font-size: 48px; font-weight: 700; letter-spacing: 8px; color: var(--accent); font-family: 'Courier New', monospace; margin-bottom: 16px;">----</div>
+                                <div style="font-size: 13px; color: var(--text-muted);">Код для авторизації</div>
+                            </div>
+                            
+                            <a id="copilot-verification-link" href="#" target="_blank" style="display: block; background: var(--info); color: white; padding: 16px; border-radius: 12px; text-decoration: none; font-weight: 600; text-align: center; margin-bottom: 24px; transition: all 0.3s;">
+                                🔗 Відкрити GitHub для авторизації
+                            </a>
+                            
+                            <div style="text-align: center; color: var(--text-secondary); font-size: 14px;">
+                                <div class="spinner" style="margin: 0 auto 16px; width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                                <div>Очікування підтвердження...</div>
+                                <div id="copilot-timer" style="margin-top: 8px; color: var(--text-muted);">Залишилося: --</div>
+                            </div>
+                        </div>
+
+                        <div id="copilot-success-screen" style="display: none;">
+                            <div style="text-align: center; background: rgba(0, 255, 136, 0.1); border: 2px solid var(--success); border-radius: 12px; padding: 32px;">
+                                <div style="font-size: 64px; margin-bottom: 16px;">✅</div>
+                                <h3 style="font-size: 24px; color: var(--success); margin-bottom: 12px;">Авторизація успішна!</h3>
+                                <p style="color: var(--text-primary); margin-bottom: 24px;">GitHub Copilot готовий до використання</p>
+                                <div id="copilot-token-info" style="background: var(--bg-primary); border-radius: 8px; padding: 16px; font-family: 'Courier New', monospace; font-size: 12px; color: var(--text-secondary); word-break: break-all; margin-bottom: 16px;"></div>
+                                <button id="copilot-restart-auth" style="padding: 12px 24px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-weight: 600; cursor: pointer;">
+                                    🔄 Нова авторизація
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="copilot-error-screen" style="display: none;">
+                            <div style="text-align: center; background: rgba(255, 68, 68, 0.1); border: 2px solid var(--error); border-radius: 12px; padding: 32px;">
+                                <div style="font-size: 64px; margin-bottom: 16px;">❌</div>
+                                <h3 style="font-size: 24px; color: var(--error); margin-bottom: 12px;">Помилка авторизації</h3>
+                                <p id="copilot-error-message" style="color: var(--text-primary); margin-bottom: 24px;"></p>
+                                <button id="copilot-retry-auth" style="padding: 12px 24px; background: var(--accent); color: var(--bg-primary); border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">
+                                    🔄 Спробувати знову
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 16px; padding: 24px;">
+                        <h3 style="font-size: 18px; margin-bottom: 16px; color: var(--text-primary);">ℹ️ Інформація</h3>
+                        <ul style="color: var(--text-secondary); line-height: 1.8; padding-left: 20px;">
+                            <li>Токен зберігається в змінній середовища <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px; color: var(--accent);">GITHUB_COPILOT_TOKEN</code></li>
+                            <li>Після авторизації моделі GitHub Copilot будуть доступні з префіксом <code style="background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px; color: var(--accent);">copilot-</code></li>
+                            <li>Термін дії токена: зазвичай 8 годин</li>
+                            <li>Підтримувані моделі: GPT-4o, Claude 3.5 Sonnet, o1-preview, o1-mini та інші</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
             <!-- Overview Tab -->
             <div class="tab-content active" id="overview">
                 <div class="stats-grid" id="statsGrid">
@@ -1608,10 +1695,122 @@
                     this.streamLogs = this.streamLogs.slice(-500);
                 }
             }
+            
+            // GitHub Copilot Authentication methods
+            initCopilotAuth() {
+                const startBtn = document.getElementById('startCopilotAuth');
+                const retryBtn = document.getElementById('copilot-retry-auth');
+                const restartBtn = document.getElementById('copilot-restart-auth');
+                
+                if (startBtn) {
+                    startBtn.addEventListener('click', () => this.startCopilotAuth());
+                }
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', () => this.resetCopilotAuth());
+                }
+                if (restartBtn) {
+                    restartBtn.addEventListener('click', () => this.resetCopilotAuth());
+                }
+            }
+            
+            resetCopilotAuth() {
+                document.getElementById('copilot-initial-screen').style.display = 'block';
+                document.getElementById('copilot-auth-screen').style.display = 'none';
+                document.getElementById('copilot-success-screen').style.display = 'none';
+                document.getElementById('copilot-error-screen').style.display = 'none';
+            }
+            
+            async startCopilotAuth() {
+                try {
+                    // Show auth screen
+                    document.getElementById('copilot-initial-screen').style.display = 'none';
+                    document.getElementById('copilot-auth-screen').style.display = 'block';
+                    
+                    // Request device code
+                    const response = await fetch('/api/copilot/auth/device-code', {
+                        method: 'POST'
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to get device code');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Update UI with code
+                    document.getElementById('copilot-user-code').textContent = data.user_code;
+                    document.getElementById('copilot-verification-link').href = data.verification_uri;
+                    
+                    // Start polling for token
+                    this.pollCopilotToken(data.device_code, data.expires_in);
+                    
+                } catch (error) {
+                    console.error('Error starting Copilot auth:', error);
+                    this.showCopilotError(error.message);
+                }
+            }
+            
+            async pollCopilotToken(deviceCode, expiresIn) {
+                const startTime = Date.now();
+                const interval = setInterval(async () => {
+                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                    const remaining = expiresIn - elapsed;
+                    
+                    // Update timer
+                    const minutes = Math.floor(remaining / 60);
+                    const seconds = remaining % 60;
+                    document.getElementById('copilot-timer').textContent = 
+                        `Залишилося: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    
+                    // Check if expired
+                    if (remaining <= 0) {
+                        clearInterval(interval);
+                        this.showCopilotError('Час авторизації вичерпано. Спробуйте знову.');
+                        return;
+                    }
+                    
+                    // Poll for token
+                    try {
+                        const response = await fetch('/api/copilot/auth/poll', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ device_code: deviceCode })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.access_token) {
+                            clearInterval(interval);
+                            this.showCopilotSuccess(data.access_token);
+                        } else if (data.error && data.error !== 'authorization_pending') {
+                            clearInterval(interval);
+                            this.showCopilotError(data.error);
+                        }
+                    } catch (error) {
+                        console.error('Error polling token:', error);
+                    }
+                }, 5000); // Poll every 5 seconds
+            }
+            
+            showCopilotSuccess(token) {
+                document.getElementById('copilot-auth-screen').style.display = 'none';
+                document.getElementById('copilot-success-screen').style.display = 'block';
+                
+                // Show masked token
+                const masked = token.substring(0, 10) + '...' + token.substring(token.length - 10);
+                document.getElementById('copilot-token-info').textContent = `Token: ${masked}`;
+            }
+            
+            showCopilotError(message) {
+                document.getElementById('copilot-auth-screen').style.display = 'none';
+                document.getElementById('copilot-error-screen').style.display = 'block';
+                document.getElementById('copilot-error-message').textContent = message;
+            }
         }
         
         // Initialize monitor and expose globally for onclick handlers
         const monitor = new ATLASMonitor();
+        monitor.initCopilotAuth();
         window.monitor = monitor;
     </script>
 </body>

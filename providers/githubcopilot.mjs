@@ -280,14 +280,22 @@ export class GitHubCopilotProvider extends Provider {
    */
   async getModels() {
     try {
-      const { endpoint, token } = await this.getApiInfo();
+      // Перевіряємо кеш спочатку без OAuth
+      const hasCachedToken = await this.loadCachedToken();
       
-      const response = await fetch(`${endpoint}/models`, {
+      if (!hasCachedToken) {
+        // Немає валідного токена - повертаємо fallback моделі без OAuth
+        console.log('[GITHUB-COPILOT] No cached token available, returning fallback models');
+        return this.getFallbackModels();
+      }
+      
+      // Використовуємо кешований токен
+      const response = await fetch(`${this.apiEndpoint}/models`, {
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
           'Copilot-Integration-Id': 'vscode-chat',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${this.tokenCache}`
         }
       });
 

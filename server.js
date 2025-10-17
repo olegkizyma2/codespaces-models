@@ -632,6 +632,82 @@ app.post('/api/copilot/auth/cancel', (req, res) => {
   res.json({ success: true, message: 'OAuth flow cancelled' });
 });
 
+// New endpoint: Get device code
+app.post('/api/copilot/auth/device-code', async (req, res) => {
+  try {
+    const copilotProvider = providerRegistry.get('githubcopilot');
+    if (!copilotProvider) {
+      return res.status(404).json({ error: 'GitHub Copilot provider not found' });
+    }
+
+    const deviceCodeInfo = await copilotProvider.getDeviceCode();
+    
+    oauthState = {
+      deviceCode: deviceCodeInfo.device_code,
+      userCode: deviceCodeInfo.user_code,
+      verificationUri: deviceCodeInfo.verification_uri,
+      status: 'pending',
+      startedAt: new Date(),
+      expiresIn: deviceCodeInfo.expires_in
+    };
+
+    res.json({
+      user_code: deviceCodeInfo.user_code,
+      device_code: deviceCodeInfo.device_code,
+      verification_uri: deviceCodeInfo.verification_uri,
+      expires_in: deviceCodeInfo.expires_in,
+      interval: deviceCodeInfo.interval || 5
+    });
+  } catch (error) {
+    console.error('[COPILOT-OAUTH] Error getting device code:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// New endpoint: Poll for token
+app.post('/api/copilot/auth/poll', async (req, res) => {
+  try {
+    const { device_code } = req.body;
+    
+    if (!device_code || !oauthState || oauthState.deviceCode !== device_code) {
+      return res.json({ error: 'invalid_request' });
+    }
+
+    const copilotProvider = providerRegistry.get('githubcopilot');
+    if (!copilotProvider) {
+      return res.status(404).json({ error: 'GitHub Copilot provider not found' });
+    }
+
+    // Try to get access token
+    try {
+      const accessToken = await copilotProvider.pollForAccessToken(device_code);
+      
+      if (accessToken) {
+        oauthState.status = 'authorized';
+        oauthState.accessToken = accessToken;
+        oauthState.authorizedAt = new Date();
+        
+        res.json({
+          access_token: accessToken,
+          token_type: 'bearer',
+          scope: 'read:user'
+        });
+      } else {
+        res.json({ error: 'authorization_pending' });
+      }
+    } catch (error) {
+      if (error.message.includes('pending')) {
+        res.json({ error: 'authorization_pending' });
+      } else {
+        res.json({ error: error.message });
+      }
+    }
+  } catch (error) {
+    console.error('[COPILOT-OAUTH] Error polling for token:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 
 // Middleware для логування запитів
@@ -2585,75 +2661,31 @@ async function handleModelsList(req, res) {
   }
   const DEFAULT_MODEL_RATE_LIMIT = { per_minute: 25, window_seconds: 60, tier: 'default' };
 
-  const models = [
-    // Всі 58 моделей з GitHub Models API
-    { id: "ai21-labs/ai21-jamba-1.5-large", object: "model", created: 1677610602, owned_by: "ai21-labs" },
-    { id: "ai21-labs/ai21-jamba-1.5-mini", object: "model", created: 1677610602, owned_by: "ai21-labs" },
-    { id: "cohere/cohere-command-a", object: "model", created: 1677610602, owned_by: "cohere" },
-    { id: "cohere/cohere-command-r-08-2024", object: "model", created: 1677610602, owned_by: "cohere" },
-    { id: "cohere/cohere-command-r-plus-08-2024", object: "model", created: 1677610602, owned_by: "cohere" },
-    { id: "cohere/cohere-embed-v3-english", object: "model", created: 1677610602, owned_by: "cohere" },
-    { id: "cohere/cohere-embed-v3-multilingual", object: "model", created: 1677610602, owned_by: "cohere" },
-    { id: "core42/jais-30b-chat", object: "model", created: 1677610602, owned_by: "core42" },
-    { id: "deepseek/deepseek-r1", object: "model", created: 1677610602, owned_by: "deepseek" },
-    { id: "deepseek/deepseek-r1-0528", object: "model", created: 1677610602, owned_by: "deepseek" },
-    { id: "deepseek/deepseek-v3-0324", object: "model", created: 1677610602, owned_by: "deepseek" },
-    { id: "meta/llama-3.2-11b-vision-instruct", object: "model", created: 1677610602, owned_by: "meta" },
-    { id: "meta/llama-3.2-90b-vision-instruct", object: "model", created: 1677610602, owned_by: "meta" },
-    { id: "meta/llama-3.3-70b-instruct", object: "model", created: 1677610602, owned_by: "meta" },
-    { id: "meta/llama-4-maverick-17b-128e-instruct-fp8", object: "model", created: 1677610602, owned_by: "meta" },
-    { id: "meta/llama-4-scout-17b-16e-instruct", object: "model", created: 1677610602, owned_by: "meta" },
-    { id: "meta/meta-llama-3.1-405b-instruct", object: "model", created: 1677610602, owned_by: "meta" },
-    { id: "meta/meta-llama-3.1-8b-instruct", object: "model", created: 1677610602, owned_by: "meta" },
-    { id: "microsoft/mai-ds-r1", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3-medium-128k-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3-medium-4k-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3-mini-128k-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3-mini-4k-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3-small-128k-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3-small-8k-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3.5-mini-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3.5-moe-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-3.5-vision-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-4", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-4-mini-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-4-mini-reasoning", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-4-multimodal-instruct", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "microsoft/phi-4-reasoning", object: "model", created: 1677610602, owned_by: "microsoft" },
-    { id: "mistral-ai/codestral-2501", object: "model", created: 1677610602, owned_by: "mistral-ai" },
-    { id: "mistral-ai/ministral-3b", object: "model", created: 1677610602, owned_by: "mistral-ai" },
-    { id: "mistral-ai/mistral-large-2411", object: "model", created: 1677610602, owned_by: "mistral-ai" },
-    { id: "mistral-ai/mistral-medium-2505", object: "model", created: 1677610602, owned_by: "mistral-ai" },
-    { id: "mistral-ai/mistral-nemo", object: "model", created: 1677610602, owned_by: "mistral-ai" },
-    { id: "mistral-ai/mistral-small-2503", object: "model", created: 1677610602, owned_by: "mistral-ai" },
-    { id: "openai/gpt-4.1", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-4.1-mini", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-4.1-nano", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-4o", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-4o-mini", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-5", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-5-chat", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-5-mini", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/gpt-5-nano", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/o1", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/o1-mini", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/o1-preview", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/o3", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/o3-mini", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/o4-mini", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/text-embedding-3-large", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "openai/text-embedding-3-small", object: "model", created: 1677610602, owned_by: "openai" },
-    { id: "xai/grok-3", object: "model", created: 1677610602, owned_by: "xai" },
-    { id: "xai/grok-3-mini", object: "model", created: 1677610602, owned_by: "xai" }
-  ];
+  // Базовий список порожній - всі моделі будуть від провайдерів (без дублікатів)
+  const models = [];
 
-  // Додаємо моделі з зовнішніх провайдерів
+  // Отримуємо моделі з зовнішніх провайдерів з timeout
   let providerModels = [];
   try {
-    providerModels = await providerRegistry.getAllModels();
+    // Використовуємо timeout 2 секунди для отримання моделей від провайдерів
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Timeout')), 2000)
+    );
+    
+    providerModels = await Promise.race([
+      providerRegistry.getAllModels(),
+      timeoutPromise
+    ]);
+    
     console.log(`[PROVIDERS] Отримано ${providerModels.length} моделей з провайдерів`);
   } catch (error) {
-    console.error('[PROVIDERS] Помилка отримання моделей:', error);
+    if (error.message === 'Timeout') {
+      console.warn('[PROVIDERS] Timeout при отриманні моделей від провайдерів, повертаємо тільки базові моделі');
+    } else {
+      console.error('[PROVIDERS] Помилка отримання моделей:', error.message);
+    }
+    // Якщо помилка - просто продовжуємо з порожнім списком провайдерів
+    providerModels = [];
   }
 
   // Об'єднуємо моделі GitHub та провайдерів

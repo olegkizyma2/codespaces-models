@@ -1,8 +1,9 @@
 <!doctype html>
-<html>
+<html lang="uk">
 <head>
   <meta charset="utf-8" />
-  <title>Model Proxy Tester</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model Proxy Tester - ATLAS</title>
   <style>
     body { font-family: Arial, sans-serif; max-width: 900px; margin: 2rem auto; }
     label { display:block; margin-top: .75rem }
@@ -49,6 +50,25 @@
     .history-toggle-btn:hover { background: #005a9e; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,122,204,0.4); }
     .close-sidebar { background: transparent; border: none; color: white; font-size: 1.8rem; cursor: pointer; padding: 0; line-height: 1; }
     .close-sidebar:hover { opacity: 0.8; }
+    
+    /* Additional utility classes */
+    .sidebar-header-title { margin: 0; }
+    .sidebar-header-actions { display: flex; gap: 10px; align-items: center; }
+    .save-current-btn { background: #28a745; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+    .hidden { display: none; }
+    .simple-input { width: 100%; padding: 0.5rem; }
+    .simple-send-btn { padding: 0.5rem 1rem; }
+    .flex-zero { flex: 0; }
+    .code-prompt-input { width: 100%; padding: 0.5rem; }
+    .tools-btn-container { margin-top: 1rem; }
+    .generate-code-btn { background: #28a745; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; margin-right: 0.5rem; }
+    .download-code-btn { background: #17a2b8; color: white; border: none; padding: 0.75rem 1rem; border-radius: 4px; cursor: pointer; }
+    .code-output-container { margin-top: 2rem; }
+    .code-output { background: #f8f9fa; border: 1px solid #dee2e6; padding: 1rem; min-height: 200px; white-space: pre-wrap; font-family: 'Courier New', monospace; }
+    .tips-container { margin-top: 1rem; background: #e7f3ff; padding: 1rem; border-radius: 4px; }
+    .tips-list { margin: 0.5rem 0; padding-left: 1.5rem; }
+    .tips-usage { margin: 0.5rem 0; }
+    .tips-code { background: #2d3748; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 3px; }
   </style>
 </head>
 <body>
@@ -58,9 +78,9 @@
   <!-- History Sidebar -->
   <div class="history-sidebar" id="historySidebar">
     <div class="history-sidebar-header">
-      <h3 style="margin: 0;">💾 Збережені розмови</h3>
-      <div style="display: flex; gap: 10px; align-items: center;">
-        <button onclick="saveCurrentChat()" style="background: #28a745; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">
+      <h3 class="sidebar-header-title">💾 Збережені розмови</h3>
+      <div class="sidebar-header-actions">
+        <button onclick="saveCurrentChat()" class="save-current-btn">
           ➕ Зберегти поточну
         </button>
         <button class="close-sidebar" id="closeSidebar">×</button>
@@ -166,7 +186,7 @@
       <button class="load-btn" id="toggleHistory">📂 History</button>
     </label>
     
-    <div id="historyPanel" class="history-panel" style="display: none;">
+    <div id="historyPanel" class="history-panel hidden">
       <h3>Збережені розмови</h3>
       <div id="historyList"></div>
     </div>
@@ -175,10 +195,10 @@
     
     <div class="row">
       <div class="col">
-        <input id="simpleInput" placeholder="Type your message..." style="width:100%; padding:0.5rem" />
+        <input id="simpleInput" placeholder="Type your message..." class="simple-input" />
       </div>
-      <div style="flex:0">
-        <button id="simpleSend" style="padding:0.5rem 1rem">Send</button>
+      <div class="flex-zero">
+        <button id="simpleSend" class="simple-send-btn">Send</button>
       </div>
     </div>
   </div>
@@ -218,38 +238,38 @@
         </label>
         
         <label>Custom Prompt (optional)
-          <input id="codePrompt" placeholder="e.g., Write a joke about programming" style="width:100%; padding:0.5rem" />
+          <input id="codePrompt" placeholder="e.g., Write a joke about programming" class="code-prompt-input" />
         </label>
         
-        <div style="margin-top: 1rem;">
-          <button id="generateCode" style="background: #28a745; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; margin-right: 0.5rem;">
+        <div class="tools-btn-container">
+          <button id="generateCode" class="generate-code-btn">
             🚀 Generate Code
           </button>
-          <button id="downloadCode" style="background: #17a2b8; color: white; border: none; padding: 0.75rem 1rem; border-radius: 4px; cursor: pointer;">
+          <button id="downloadCode" class="download-code-btn">
             💾 Download
           </button>
         </div>
       </div>
     </div>
     
-    <div style="margin-top: 2rem;">
+    <div class="code-output-container">
       <h3>Generated Code:</h3>
-      <pre id="codeOutput" style="background: #f8f9fa; border: 1px solid #dee2e6; padding: 1rem; min-height: 200px; white-space: pre-wrap; font-family: 'Courier New', monospace;">
+      <pre id="codeOutput" class="code-output">
 Click "Generate Code" to create a ready-to-use example...
       </pre>
     </div>
     
-    <div style="margin-top: 1rem; background: #e7f3ff; padding: 1rem; border-radius: 4px;">
+    <div class="tips-container">
       <h4>💡 Quick Tips:</h4>
-      <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+      <ul class="tips-list">
         <li><strong>JavaScript:</strong> Ready for Node.js, includes error handling</li>
         <li><strong>Python:</strong> Includes timing and usage statistics</li>
         <li><strong>Shell:</strong> Uses curl with both simple and OpenAI APIs</li>
         <li><strong>Download:</strong> Get the code as a file to run locally</li>
       </ul>
       
-      <p style="margin: 0.5rem 0;"><strong>Terminal Usage:</strong></p>
-      <code style="background: #2d3748; color: #e2e8f0; padding: 0.25rem 0.5rem; border-radius: 3px;">
+      <p class="tips-usage"><strong>Terminal Usage:</strong></p>
+      <code class="tips-code">
         node code-generator.mjs basic js gpt-4o-mini "Your prompt here"
       </code>
     </div>
@@ -535,11 +555,9 @@ Click "Generate Code" to create a ready-to-use example...
     });
     
     toggleHistory.addEventListener('click', () => {
-      if (historyPanel.style.display === 'none') {
-        historyPanel.style.display = 'block';
+      historyPanel.classList.toggle('hidden');
+      if (!historyPanel.classList.contains('hidden')) {
         updateHistoryList();
-      } else {
-        historyPanel.style.display = 'none';
       }
     });
     

@@ -3,8 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GitHub Copilot Authentication</title>
+  <title>GitHub Copilot Authentication - ATLAS</title>
   <style>
+    :root {
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-tertiary: #1a1a1a;
+      --bg-hover: #222222;
+      --text-primary: #e8e8e8;
+      --text-secondary: #a0a0a0;
+      --text-muted: #666666;
+      --accent: #00ff88;
+      --accent-hover: #00cc66;
+      --accent-dim: rgba(0, 255, 136, 0.1);
+      --border: rgba(255, 255, 255, 0.08);
+      --error: #ff4444;
+      --warning: #ff9900;
+      --success: #00ff88;
+      --info: #3b82f6;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -12,19 +30,21 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 20px;
+      color: var(--text-primary);
     }
 
     .container {
-      background: white;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
       border-radius: 20px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
       max-width: 600px;
       width: 100%;
       padding: 40px;
@@ -32,13 +52,13 @@
     }
 
     h1 {
-      color: #333;
+      color: var(--text-primary);
       margin-bottom: 10px;
       font-size: 28px;
     }
 
     .subtitle {
-      color: #666;
+      color: var(--text-secondary);
       margin-bottom: 30px;
       font-size: 14px;
     }
@@ -56,30 +76,33 @@
     }
 
     .status.pending {
-      background: #fff3cd;
-      border: 2px solid #ffc107;
+      background: rgba(255, 153, 0, 0.1);
+      border: 2px solid var(--warning);
+      color: var(--text-primary);
     }
 
     .status.authorized {
-      background: #d4edda;
-      border: 2px solid #28a745;
+      background: rgba(0, 255, 136, 0.1);
+      border: 2px solid var(--success);
+      color: var(--text-primary);
     }
 
     .status.error {
-      background: #f8d7da;
-      border: 2px solid #dc3545;
+      background: rgba(255, 68, 68, 0.1);
+      border: 2px solid var(--error);
+      color: var(--text-primary);
     }
 
     .code-display {
-      background: #f8f9fa;
-      border: 2px dashed #dee2e6;
+      background: var(--bg-tertiary);
+      border: 2px dashed var(--border);
       border-radius: 12px;
       padding: 30px;
       margin: 20px 0;
       font-size: 48px;
       font-weight: bold;
       letter-spacing: 8px;
-      color: #495057;
+      color: var(--accent);
       font-family: 'Courier New', monospace;
       animation: pulse 2s infinite;
     }
@@ -91,10 +114,10 @@
 
     .verification-link {
       display: inline-block;
-      background: #0d6efd;
+      background: var(--info);
       color: white;
       padding: 15px 30px;
-      border-radius: 8px;
+      border-radius: 12px;
       text-decoration: none;
       font-weight: 600;
       margin: 20px 0;
@@ -102,17 +125,17 @@
     }
 
     .verification-link:hover {
-      background: #0b5ed7;
+      background: #2563eb;
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(13, 110, 253, 0.4);
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
     }
 
     .spinner {
       display: inline-block;
       width: 40px;
       height: 40px;
-      border: 4px solid #f3f3f3;
-      border-top: 4px solid #667eea;
+      border: 4px solid var(--border);
+      border-top: 4px solid var(--accent);
       border-radius: 50%;
       animation: spin 1s linear infinite;
       margin: 20px auto;
@@ -124,11 +147,11 @@
     }
 
     .button {
-      background: #6c757d;
-      color: white;
-      border: none;
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
       padding: 12px 24px;
-      border-radius: 8px;
+      border-radius: 12px;
       cursor: pointer;
       font-size: 16px;
       font-weight: 600;
@@ -137,16 +160,19 @@
     }
 
     .button:hover {
-      background: #5a6268;
+      background: var(--bg-hover);
+      border-color: var(--accent);
       transform: translateY(-2px);
     }
 
     .button.primary {
-      background: #667eea;
+      background: var(--accent);
+      color: var(--bg-primary);
+      border-color: var(--accent);
     }
 
     .button.primary:hover {
-      background: #5568d3;
+      background: var(--accent-hover);
     }
 
     .icon {
@@ -155,12 +181,16 @@
     }
 
     .instructions {
-      background: #e7f3ff;
-      border-left: 4px solid #0d6efd;
+      background: var(--accent-dim);
+      border-left: 4px solid var(--accent);
       padding: 15px;
       margin: 20px 0;
       text-align: left;
       border-radius: 8px;
+    }
+
+    .instructions strong {
+      color: var(--accent);
     }
 
     .instructions ol {
@@ -170,7 +200,7 @@
 
     .instructions li {
       margin: 8px 0;
-      color: #333;
+      color: var(--text-primary);
     }
 
     .hidden {
@@ -179,8 +209,26 @@
 
     .timer {
       font-size: 14px;
-      color: #666;
+      color: var(--text-secondary);
       margin-top: 10px;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-top: 20px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      transition: color 0.3s;
+    }
+
+    .back-link:hover {
+      color: var(--accent);
+    }
+
+    .success-info {
+      margin: 20px 0;
+      color: var(--text-secondary);
     }
   </style>
 </head>
@@ -202,6 +250,7 @@
       </div>
 
       <button class="button primary" onclick="startAuth()">🚀 Розпочати авторизацію</button>
+      <a href="/" class="back-link">← Повернутися на головну</a>
     </div>
 
     <div id="auth-screen" class="hidden">
@@ -240,7 +289,7 @@
         Провайдер GitHub Copilot активовано
       </div>
 
-      <p style="margin: 20px 0; color: #666;">
+      <p class="success-info">
         Тепер ви можете використовувати всі моделі GitHub Copilot,<br>
         включаючи Claude Sonnet 4 та GPT-4o
       </p>
@@ -269,27 +318,29 @@
 
     async function startAuth() {
       try {
-        const response = await fetch('/api/copilot/auth/start', {
+        const response = await fetch('/api/copilot/auth/device-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
 
         if (!response.ok) {
-          throw new Error('Failed to start OAuth flow');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to start OAuth flow');
         }
 
         const data = await response.json();
         
-        document.getElementById('user-code').textContent = data.userCode;
-        document.getElementById('verification-link').href = data.verificationUri;
+        document.getElementById('user-code').textContent = data.user_code;
+        document.getElementById('verification-link').href = data.verification_uri;
         
         document.getElementById('initial-screen').classList.add('hidden');
         document.getElementById('auth-screen').classList.remove('hidden');
 
         startTime = Date.now();
         updateTimer();
-        pollStatus();
+        pollStatus(data.device_code);
       } catch (error) {
+        console.error('Auth error:', error);
         showError(error.message);
       }
     }
@@ -306,23 +357,40 @@
       }, 1000);
     }
 
-    async function pollStatus() {
+    async function pollStatus(deviceCode) {
+      let attempts = 0;
+      const maxAttempts = 180; // 15 minutes (180 * 5 seconds)
+      
       pollInterval = setInterval(async () => {
+        if (attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+          showError('Час очікування вичерпано. Спробуйте знову.');
+          return;
+        }
+        
+        attempts++;
+        
         try {
-          const response = await fetch('/api/copilot/auth/status');
+          const response = await fetch('/api/copilot/auth/poll', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_code: deviceCode })
+          });
+
           const data = await response.json();
 
-          if (data.status === 'authorized') {
+          if (data.access_token) {
             clearInterval(pollInterval);
             showSuccess();
-          } else if (data.status === 'error') {
+          } else if (data.error && data.error !== 'authorization_pending') {
             clearInterval(pollInterval);
             showError(data.error);
           }
+          // If authorization_pending, continue polling
         } catch (error) {
           console.error('Error polling status:', error);
         }
-      }, 2000); // Poll every 2 seconds
+      }, 5000); // Poll every 5 seconds
     }
 
     function showSuccess() {
@@ -333,6 +401,9 @@
 
     function showError(message) {
       startTime = null;
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
       document.getElementById('error-message').textContent = message;
       document.getElementById('initial-screen').classList.add('hidden');
       document.getElementById('auth-screen').classList.add('hidden');

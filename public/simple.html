@@ -479,7 +479,7 @@
             <div class="logo">ATLAS</div>
             
             <div class="model-selector">
-                <select id="modelSelect">
+                <select id="modelSelect" title="Виберіть AI модель" aria-label="Виберіть AI модель">
                     <option value="">Завантаження моделей...</option>
                 </select>
             </div>
@@ -493,6 +493,10 @@
                 🔄 Новий чат
             </button>
             
+            <a href="/monitor" class="mode-btn" style="background: var(--bg-tertiary); border-radius: 8px; padding: 10px 16px; text-decoration: none; display: flex; align-items: center; gap: 6px; border: 1px solid var(--border);">
+                📊 Моніторинг
+            </a>
+            
             <div class="status-indicator">
                 <span class="status-dot"></span>
                 <span id="tokenCount">4 токени</span>
@@ -502,7 +506,7 @@
         <div class="chat-container" id="chatContainer">
             <div class="welcome">
                 <h2>👋 Привіт! Я ATLAS</h2>
-                <p>Ваш AI асистент. Завантажено 58 моделей! Виберіть модель та режим роботи вгорі.</p>
+                <p>Ваш AI асистент. Виберіть модель та режим роботи вгорі.</p>
             </div>
         </div>
         
@@ -515,7 +519,7 @@
                         rows="1"
                     ></textarea>
                 </div>
-                <button class="send-btn" id="sendBtn">
+                <button class="send-btn" id="sendBtn" title="Відправити повідомлення" aria-label="Відправити повідомлення">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                         <path d="M18 2L9 11M18 2L12 18L9 11M18 2L2 8L9 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
@@ -603,7 +607,7 @@
                 welcome.className = 'welcome';
                 welcome.innerHTML = `
                     <h2>👋 Привіт! Я ATLAS</h2>
-                    <p>Ваш AI асистент. Завантажено 58 моделей! Виберіть модель та режим роботи вгорі.</p>
+                    <p>Ваш AI асистент. Виберіть модель та режим роботи вгорі.</p>
                 `;
                 this.chatContainer.appendChild(welcome);
             }
