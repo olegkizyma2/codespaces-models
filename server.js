@@ -9,6 +9,7 @@ import os from 'os';
 import { createClient as createRedisClient } from 'redis';
 import { getTokenRotator } from './token-rotator.mjs';
 import { initializeProviders } from './providers/index.mjs';
+import { providerLoggerManager } from './provider-logger.mjs';
 
 // ES modules equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -346,6 +347,185 @@ app.get('/api/monitoring/providers/:name/models', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Get provider token statistics (for providers with token rotation)
+app.get('/api/monitoring/providers/:name/tokens', (req, res) => {
+  try {
+    const { name } = req.params;
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    // Check if provider supports token statistics
+    if (typeof provider.getTokenStats !== 'function') {
+      return res.json({
+        success: true,
+        provider: name,
+        message: 'Provider does not support token rotation',
+        tokens: []
+      });
+    }
+    
+    const tokenStats = provider.getTokenStats();
+    
+    res.json({
+      success: true,
+      provider: name,
+      tokens: tokenStats,
+      total: tokenStats.length,
+      active: tokenStats.filter(t => t.active).length,
+      blocked: tokenStats.filter(t => t.blocked).length
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error fetching token stats for ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Manually rotate provider token
+app.post('/api/monitoring/providers/:name/rotate-token', (req, res) => {
+  try {
+    const { name } = req.params;
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    // Check if provider supports token rotation
+    if (typeof provider.rotateToken !== 'function') {
+      return res.json({
+        success: false,
+        error: 'Provider does not support token rotation'
+      });
+    }
+    
+    provider.rotateToken();
+    
+    res.json({
+      success: true,
+      provider: name,
+      message: 'Token rotated successfully',
+      current_token: provider.getCurrentToken ? provider.getCurrentToken() : null
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error rotating token for ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all provider token statistics
+app.get('/api/monitoring/providers/tokens/all', (req, res) => {
+  try {
+    const providers = providerRegistry.getAll();
+    const allTokenStats = {};
+    
+    for (const provider of providers) {
+      if (typeof provider.getTokenStats === 'function') {
+        allTokenStats[provider.name] = {
+          tokens: provider.getTokenStats(),
+          enabled: provider.enabled
+        };
+      }
+    }
+    
+    res.json({
+      success: true,
+      providers: allTokenStats,
+      total_providers: Object.keys(allTokenStats).length
+    });
+  } catch (error) {
+    console.error('[PROVIDERS] Error fetching all token stats:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get provider logs
+app.get('/api/monitoring/providers/:name/logs', (req, res) => {
+  try {
+    const { name } = req.params;
+    const { level, count = 100 } = req.query;
+    
+    const logger = providerLoggerManager.getLogger(name);
+    
+    let logs;
+    if (level) {
+      logs = logger.getLogsByLevel(level, parseInt(count));
+    } else {
+      logs = logger.getRecentLogs(parseInt(count));
+    }
+    
+    res.json({
+      success: true,
+      provider: name,
+      logs,
+      count: logs.length
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error fetching logs for ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all provider logs combined
+app.get('/api/monitoring/providers/logs/all', (req, res) => {
+  try {
+    const { count = 200 } = req.query;
+    const logs = providerLoggerManager.getAllRecentLogs(parseInt(count));
+    
+    res.json({
+      success: true,
+      logs,
+      count: logs.length
+    });
+  } catch (error) {
+    console.error('[PROVIDERS] Error fetching all logs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get provider logging statistics
+app.get('/api/monitoring/providers/logs/stats', (req, res) => {
+  try {
+    const stats = providerLoggerManager.getStats();
+    
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    console.error('[PROVIDERS] Error fetching log stats:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Clear provider logs
+app.post('/api/monitoring/providers/:name/logs/clear', (req, res) => {
+  try {
+    const { name } = req.params;
+    const logger = providerLoggerManager.getLogger(name);
+    logger.clearMemoryLogs();
+    
+    res.json({
+      success: true,
+      provider: name,
+      message: 'Logs cleared successfully'
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error clearing logs for ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
 
 // Middleware для логування запитів
 app.use((req, res, next) => {
