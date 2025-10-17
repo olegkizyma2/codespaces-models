@@ -1,152 +1,12 @@
 /**
- * ATLAS Provider - Goose-compatible
+ * ATLAS Provider
  * Groups 58 GitHub Models API models into a single provider
  * Supports token rotation for high availability
  */
-import { Provider, ProviderMetadata, ModelInfo, ProviderUsage, ProviderError } from './base.mjs';
+import { Provider } from './base.mjs';
 import OpenAI from 'openai';
 
 export class ATLASProvider extends Provider {
-  /**
-   * Returns provider metadata following Goose architecture
-   */
-  static metadata() {
-    const models = ATLASProvider.getAllModels();
-    
-    return ProviderMetadata.create(
-      'atlas',
-      'ATLAS (GitHub Models)',
-      'Unified access to 58 GitHub Models API models with automatic token rotation',
-      'openai/gpt-4o',
-      models.map(modelId => {
-        // Parse model info from ID
-        const [provider, modelName] = modelId.split('/');
-        let contextLimit = 128000; // Default
-        let inputCost = 0;
-        let outputCost = 0;
-        
-        // Set costs based on model
-        if (modelId.includes('gpt-4o')) {
-          inputCost = 0.0025;
-          outputCost = 0.01;
-        } else if (modelId.includes('gpt-5')) {
-          inputCost = 0.005;
-          outputCost = 0.015;
-        } else if (modelId.includes('o1') || modelId.includes('o3')) {
-          inputCost = 0.015;
-          outputCost = 0.06;
-          contextLimit = 200000;
-        } else if (modelId.includes('llama')) {
-          inputCost = 0;
-          outputCost = 0;
-        } else if (modelId.includes('phi')) {
-          inputCost = 0;
-          outputCost = 0;
-        }
-        
-        return new ModelInfo({
-          name: modelId,
-          contextLimit,
-          inputTokenCost: inputCost,
-          outputTokenCost: outputCost,
-          currency: 'USD',
-          supportsCacheControl: false
-        });
-      }),
-      'https://github.com/marketplace/models',
-      [
-        { name: 'GITHUB_TOKEN', required: true, description: 'GitHub personal access token' },
-        { name: 'GITHUB_TOKEN_2', required: false, description: 'Additional token for rotation' },
-        { name: 'GITHUB_TOKEN_3', required: false, description: 'Additional token for rotation' },
-        { name: 'ATLAS_BASE_URL', required: false, description: 'Custom base URL (default: https://models.inference.ai.azure.com)' }
-      ]
-    );
-  }
-
-  /**
-   * Returns all 58 supported models
-   */
-  static getAllModels() {
-    return [
-      "ai21-labs/ai21-jamba-1.5-large",
-      "ai21-labs/ai21-jamba-1.5-mini",
-      "cohere/cohere-command-a",
-      "cohere/cohere-command-r-08-2024",
-      "cohere/cohere-command-r-plus-08-2024",
-      "cohere/cohere-embed-v3-english",
-      "cohere/cohere-embed-v3-multilingual",
-      "core42/jais-30b-chat",
-      "deepseek/deepseek-r1",
-      "deepseek/deepseek-r1-0528",
-      "deepseek/deepseek-v3-0324",
-      "meta/llama-3.2-11b-vision-instruct",
-      "meta/llama-3.2-90b-vision-instruct",
-      "meta/llama-3.3-70b-instruct",
-      "meta/llama-4-maverick-17b-128e-instruct-fp8",
-      "meta/llama-4-scout-17b-16e-instruct",
-      "meta/meta-llama-3.1-405b-instruct",
-      "meta/meta-llama-3.1-8b-instruct",
-      "microsoft/mai-ds-r1",
-      "microsoft/phi-3-medium-128k-instruct",
-      "microsoft/phi-3-medium-4k-instruct",
-      "microsoft/phi-3-mini-128k-instruct",
-      "microsoft/phi-3-mini-4k-instruct",
-      "microsoft/phi-3-small-128k-instruct",
-      "microsoft/phi-3-small-8k-instruct",
-      "microsoft/phi-3.5-mini-instruct",
-      "microsoft/phi-3.5-moe-instruct",
-      "microsoft/phi-3.5-vision-instruct",
-      "microsoft/phi-4",
-      "microsoft/phi-4-mini-instruct",
-      "microsoft/phi-4-mini-reasoning",
-      "microsoft/phi-4-multimodal-instruct",
-      "microsoft/phi-4-reasoning",
-      "mistral-ai/codestral-2501",
-      "mistral-ai/ministral-3b",
-      "mistral-ai/mistral-large-2411",
-      "mistral-ai/mistral-medium-2505",
-      "mistral-ai/mistral-nemo",
-      "mistral-ai/mistral-small-2503",
-      "openai/gpt-4.1",
-      "openai/gpt-4.1-mini",
-      "openai/gpt-4.1-nano",
-      "openai/gpt-4o",
-      "openai/gpt-4o-mini",
-      "openai/gpt-5",
-      "openai/gpt-5-chat",
-      "openai/gpt-5-mini",
-      "openai/gpt-5-nano",
-      "openai/o1",
-      "openai/o1-mini",
-      "openai/o1-preview",
-      "openai/o3",
-      "openai/o3-mini",
-      "openai/o4-mini",
-      "openai/text-embedding-3-large",
-      "openai/text-embedding-3-small",
-      "xai/grok-3",
-      "xai/grok-3-mini"
-    ];
-  }
-
-  /**
-   * Creates provider instance from environment variables
-   */
-  static fromEnv(modelConfig = {}) {
-    const token = Provider.getEnvSecret('GITHUB_TOKEN');
-    
-    if (!token || !token.startsWith('gho_')) {
-      throw ProviderError.authError(
-        'ATLAS requires GITHUB_TOKEN environment variable with valid GitHub token'
-      );
-    }
-
-    return new ATLASProvider({
-      apiKey: token,
-      ...modelConfig
-    });
-  }
-
   constructor(config = {}) {
     super({
       name: 'atlas',
@@ -164,48 +24,6 @@ export class ATLASProvider extends Provider {
     // OpenAI client for GitHub Models
     this.client = null;
     this.updateClient();
-  }
-
-  /**
-   * Extracts usage information from GitHub Models API response
-   */
-  extractUsage(response) {
-    const usage = response?.usage;
-    if (!usage) return null;
-
-    return ProviderUsage.create('atlas', {
-      inputTokens: usage.prompt_tokens || 0,
-      outputTokens: usage.completion_tokens || 0,
-      totalTokens: usage.total_tokens || 0
-    });
-  }
-
-  /**
-   * Handles ATLAS-specific errors
-   */
-  handleError(error) {
-    const message = error.message || String(error);
-    const status = error.status || error.statusCode;
-    
-    // GitHub authentication errors
-    if (status === 401 || message.includes('401') || message.includes('Unauthorized')) {
-      throw ProviderError.authError('ATLAS authentication failed. Check your GITHUB_TOKEN.');
-    }
-    
-    // Rate limiting - special handling with token rotation
-    if (status === 429 || message.includes('429') || message.includes('Rate limit')) {
-      console.log('[ATLAS] Rate limit hit, rotating token');
-      this.rotateToken();
-      throw ProviderError.rateLimitError('ATLAS rate limit exceeded. Token rotated, please retry.');
-    }
-    
-    // Context length errors
-    if (message.includes('context_length') || message.includes('maximum context length')) {
-      throw ProviderError.contextLengthError('Request exceeds ATLAS model context length.');
-    }
-    
-    // Generic ATLAS API error
-    throw ProviderError.apiError(`ATLAS API error: ${message}`);
   }
 
   /**
@@ -295,24 +113,69 @@ export class ATLASProvider extends Provider {
   }
 
   /**
-   * Fetch supported models from ATLAS
-   */
-  async fetchSupportedModels() {
-    const models = ATLASProvider.getAllModels();
-    
-    return models.map(id => ({
-      id,
-      name: id,
-      provider: id.split('/')[0],
-      owned_by: id.split('/')[0]
-    }));
-  }
-
-  /**
-   * All 58 GitHub Models (deprecated, use static method)
+   * All 58 GitHub Models
    */
   getGitHubModels() {
-    return ATLASProvider.getAllModels();
+    return [
+      "ai21-labs/ai21-jamba-1.5-large",
+      "ai21-labs/ai21-jamba-1.5-mini",
+      "cohere/cohere-command-a",
+      "cohere/cohere-command-r-08-2024",
+      "cohere/cohere-command-r-plus-08-2024",
+      "cohere/cohere-embed-v3-english",
+      "cohere/cohere-embed-v3-multilingual",
+      "core42/jais-30b-chat",
+      "deepseek/deepseek-r1",
+      "deepseek/deepseek-r1-0528",
+      "deepseek/deepseek-v3-0324",
+      "meta/llama-3.2-11b-vision-instruct",
+      "meta/llama-3.2-90b-vision-instruct",
+      "meta/llama-3.3-70b-instruct",
+      "meta/llama-4-maverick-17b-128e-instruct-fp8",
+      "meta/llama-4-scout-17b-16e-instruct",
+      "meta/meta-llama-3.1-405b-instruct",
+      "meta/meta-llama-3.1-8b-instruct",
+      "microsoft/mai-ds-r1",
+      "microsoft/phi-3-medium-128k-instruct",
+      "microsoft/phi-3-medium-4k-instruct",
+      "microsoft/phi-3-mini-128k-instruct",
+      "microsoft/phi-3-mini-4k-instruct",
+      "microsoft/phi-3-small-128k-instruct",
+      "microsoft/phi-3-small-8k-instruct",
+      "microsoft/phi-3.5-mini-instruct",
+      "microsoft/phi-3.5-moe-instruct",
+      "microsoft/phi-3.5-vision-instruct",
+      "microsoft/phi-4",
+      "microsoft/phi-4-mini-instruct",
+      "microsoft/phi-4-mini-reasoning",
+      "microsoft/phi-4-multimodal-instruct",
+      "microsoft/phi-4-reasoning",
+      "mistral-ai/codestral-2501",
+      "mistral-ai/ministral-3b",
+      "mistral-ai/mistral-large-2411",
+      "mistral-ai/mistral-medium-2505",
+      "mistral-ai/mistral-nemo",
+      "mistral-ai/mistral-small-2503",
+      "openai/gpt-4.1",
+      "openai/gpt-4.1-mini",
+      "openai/gpt-4.1-nano",
+      "openai/gpt-4o",
+      "openai/gpt-4o-mini",
+      "openai/gpt-5",
+      "openai/gpt-5-chat",
+      "openai/gpt-5-mini",
+      "openai/gpt-5-nano",
+      "openai/o1",
+      "openai/o1-mini",
+      "openai/o1-preview",
+      "openai/o3",
+      "openai/o3-mini",
+      "openai/o4-mini",
+      "openai/text-embedding-3-large",
+      "openai/text-embedding-3-small",
+      "xai/grok-3",
+      "xai/grok-3-mini"
+    ];
   }
 
   async getModels() {
@@ -329,19 +192,19 @@ export class ATLASProvider extends Provider {
   }
 
   async chatCompletion(params) {
+    const { model, messages, temperature, max_tokens, stream = false, ...rest } = params;
+    const originalModel = this.getOriginalModelName(model);
+    const token = this.getCurrentToken();
+
+    if (!token) {
+      throw new Error('No ATLAS token available');
+    }
+
+    if (!this.client) {
+      this.updateClient();
+    }
+
     try {
-      const { model, messages, temperature, max_tokens, stream = false, ...rest } = params;
-      const originalModel = this.getOriginalModelName(model);
-      const token = this.getCurrentToken();
-
-      if (!token) {
-        throw new Error('No ATLAS token available');
-      }
-
-      if (!this.client) {
-        this.updateClient();
-      }
-
       const response = await this.client.chat.completions.create({
         model: originalModel,
         messages,
@@ -353,39 +216,40 @@ export class ATLASProvider extends Provider {
 
       // If not streaming, format response
       if (!stream) {
-        const result = {
+        return {
           ...response,
           model: this.getPrefixedModelName(originalModel)
         };
-        
-        // Record successful request
-        this.recordSuccess();
-        
-        // Return with usage tracking
-        const usage = this.extractUsage(result);
-        return usage || result;
       }
 
       return response;
     } catch (error) {
-      this.handleError(error);
+      // Handle rate limit
+      if (error.status === 429 || error.message?.includes('429')) {
+        console.log('[ATLAS] Rate limit hit, rotating token');
+        this.rotateToken();
+        throw new Error('Rate limit exceeded, token rotated. Please retry.');
+      }
+      
+      console.error('[ATLAS] Error:', error.message);
+      throw error;
     }
   }
 
   async *streamChatCompletion(params) {
+    const { model, messages, temperature, max_tokens, ...rest } = params;
+    const originalModel = this.getOriginalModelName(model);
+    const token = this.getCurrentToken();
+
+    if (!token) {
+      throw new Error('No ATLAS token available');
+    }
+
+    if (!this.client) {
+      this.updateClient();
+    }
+
     try {
-      const { model, messages, temperature, max_tokens, ...rest } = params;
-      const originalModel = this.getOriginalModelName(model);
-      const token = this.getCurrentToken();
-
-      if (!token) {
-        throw new Error('No ATLAS token available');
-      }
-
-      if (!this.client) {
-        this.updateClient();
-      }
-
       const stream = await this.client.chat.completions.create({
         model: originalModel,
         messages,
@@ -401,11 +265,15 @@ export class ATLASProvider extends Provider {
           model: this.getPrefixedModelName(originalModel)
         };
       }
-      
-      // Record successful stream
-      this.recordSuccess();
     } catch (error) {
-      this.handleError(error);
+      if (error.status === 429 || error.message?.includes('429')) {
+        console.log('[ATLAS] Rate limit hit in stream, rotating token');
+        this.rotateToken();
+        throw new Error('Rate limit exceeded, token rotated. Please retry.');
+      }
+      
+      console.error('[ATLAS] Stream error:', error.message);
+      throw error;
     }
   }
 
