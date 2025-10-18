@@ -7,11 +7,11 @@ const serverUrl = 'http://localhost:4000';
 // Функція для паузи
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Моделі для тестування
+// Моделі Atlas для тестування (правильні назви GitHub Models API)
 const modelsToTest = [
-  'copilot-gpt-4.1',
-  'copilot-gpt-4o-mini',
-  'copilot-gpt-5-mini'
+  'atlas-gpt-4o-mini',
+  'atlas-llama-3.3-70b-instruct',
+  'atlas-phi-4'
 ];
 
 async function testModel(modelName) {
@@ -37,7 +37,7 @@ async function testModel(modelName) {
       const error = await response.text();
       console.log(`❌ Помилка ${response.status}`);
       console.log(error.substring(0, 200));
-      return { success: false, model: modelName };
+      return { success: false, model: modelName, status: response.status };
     }
     
     const data = await response.json();
@@ -53,7 +53,7 @@ async function testModel(modelName) {
 }
 
 async function testAllModels() {
-  console.log('🚀 Початок тестування GitHub Copilot моделей');
+  console.log('🚀 Початок тестування Atlas моделей');
   console.log(`📋 Тестуватиму ${modelsToTest.length} моделей\n`);
   
   const results = [];
@@ -71,7 +71,7 @@ async function testAllModels() {
   
   // Підсумок
   console.log('\n' + '='.repeat(60));
-  console.log('📊 ПІДСУМОК ТЕСТУВАННЯ');
+  console.log('📊 ПІДСУМОК ТЕСТУВАННЯ ATLAS');
   console.log('='.repeat(60));
   
   const successful = results.filter(r => r.success).length;
@@ -90,8 +90,17 @@ async function testAllModels() {
   if (failed > 0) {
     console.log('\n⚠️  Моделі з помилками:');
     results.filter(r => !r.success).forEach(r => {
-      console.log(`  • ${r.model}`);
+      console.log(`  • ${r.model} (${r.status ? `HTTP ${r.status}` : r.error})`);
     });
+  }
+  
+  // Якщо всі моделі не працюють, виводимо додаткову інформацію
+  if (failed === modelsToTest.length) {
+    console.log('\n💡 РЕКОМЕНДАЦІЇ:');
+    console.log('  1. Перевірте чи ATLAS_ENABLED=1 в .env файлі');
+    console.log('  2. Переконайтесь що GITHUB_TOKEN встановлений і валідний');
+    console.log('  3. Перезапустіть сервер після зміни .env');
+    console.log('  4. Перевірте чи токен має доступ до GitHub Models API');
   }
 }
 

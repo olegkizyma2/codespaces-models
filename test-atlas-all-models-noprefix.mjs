@@ -2,7 +2,12 @@
 
 import 'dotenv/config';
 
-const token = '[REDACTED_GITHUB_PAT]';
+// Токени для тестування (читаємо з .env)
+const tokens = [
+  process.env.GITHUB_TOKEN,
+  process.env.GITHUB_TOKEN2
+].filter(t => t && t.trim()); // Фільтруємо порожні
+
 const baseURL = 'https://models.inference.ai.azure.com';
 
 const models = [
@@ -66,7 +71,7 @@ const models = [
   "grok-3-mini"
 ];
 
-async function testModel(model) {
+async function testModel(model, token) {
   try {
     const response = await fetch(`${baseURL}/chat/completions`, {
       method: 'POST',
@@ -93,24 +98,54 @@ async function testModel(model) {
 }
 
 (async () => {
-  console.log('Тестую всі моделі ATLAS без префікса...');
-  const results = [];
-  for (const model of models) {
-    process.stdout.write(`\n${model} ... `);
-    const res = await testModel(model);
-    if (res.status === 'OK') {
-      console.log('✅ OK');
-    } else {
-      console.log(`❌ ${res.status}`);
+  console.log('🚀 Тестую всі моделі ATLAS без префікса з 2 токенами...\n');
+  
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const tokenPreview = token.substring(0, 8) + '...' + token.slice(-4);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`📋 ТОКЕН ${i + 1}: ${tokenPreview}`);
+    console.log('='.repeat(60));
+    
+    const results = [];
+    let successCount = 0;
+    
+    // Тестуємо тільки перші 5 моделей для швидкості
+    const testModels = models.slice(0, 5);
+    
+    for (const model of testModels) {
+      process.stdout.write(`${model} ... `);
+      const res = await testModel(model, token);
+      if (res.status === 'OK') {
+        console.log('✅ OK');
+        successCount++;
+      } else {
+        console.log(`❌ ${res.status}`);
+      }
+      results.push(res);
+      
+      // Пауза 100ms між запитами
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-    results.push(res);
-  }
-  console.log('\n\nРЕЗУЛЬТАТИ:');
-  for (const r of results) {
-    if (r.status === 'OK') {
-      console.log(`✅ ${r.model}`);
+    
+    console.log(`\n📊 Результат: ${successCount}/${testModels.length} моделей працюють`);
+    
+    if (successCount === 0) {
+      console.log('\n⚠️  Помилки:');
+      results.slice(0, 2).forEach(r => {
+        if (r.status !== 'OK') {
+          console.log(`   ${r.model}: ${r.error?.substring(0, 100)}`);
+        }
+      });
     } else {
-      console.log(`❌ ${r.model} — ${r.status} — ${r.error}`);
+      console.log('\n✅ Робочі моделі:');
+      results.filter(r => r.status === 'OK').forEach(r => {
+        console.log(`   • ${r.model}`);
+      });
     }
   }
+  
+  console.log('\n' + '='.repeat(60));
+  console.log('✨ ТЕСТУВАННЯ ЗАВЕРШЕНО');
+  console.log('='.repeat(60));
 })();
