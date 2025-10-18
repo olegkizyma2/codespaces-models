@@ -1080,6 +1080,9 @@
                 // Auto-refresh every 10 seconds
                 setInterval(() => this.loadAllData(), 10000);
                 
+                // Auto-refresh models every 30 seconds
+                setInterval(() => this.loadModels(), 30000);
+                
                 // Load real logs from server
                 await this.loadLogs();
                 setInterval(() => this.loadLogs(), 5000); // Update logs every 5 seconds
@@ -1275,6 +1278,9 @@
                     const errors = provider.errors && provider.errors.length > 0 ? 
                         `<div style="color: var(--error); font-size: 12px; margin-top: 8px;">⚠️ ${provider.errors.join(', ')}</div>` : 
                         '';
+                    
+                    const toggleBtnText = provider.enabled ? '⏸️ Вимкнути' : '▶️ Увімкнути';
+                    const toggleBtnStyle = provider.enabled ? 'border-color: var(--warning); color: var(--warning);' : 'border-color: var(--success); color: var(--success);';
 
                     return `
                         <div class="stat-card" style="margin-bottom: 16px;">
@@ -1292,17 +1298,19 @@
                                 </div>
                             </div>
                             ${errors}
+                            
+                            <!-- Main buttons -->
                             <div style="display: flex; gap: 8px; margin-top: 12px;">
                                 <button 
                                     class="refresh-btn" 
-                                    style="flex: 1; font-size: 13px; padding: 8px 12px;"
-                                    onclick="monitor.configureProvider('${provider.name}')"
+                                    style="${toggleBtnStyle}"
+                                    onclick="monitor.toggleProvider('${provider.name}')"
+                                    ${!provider.configured ? 'disabled' : ''}
                                 >
-                                    ⚙️ Налаштувати
+                                    ${toggleBtnText}
                                 </button>
                                 <button 
                                     class="refresh-btn" 
-                                    style="flex: 1; font-size: 13px; padding: 8px 12px; background: var(--info);"
                                     onclick="monitor.testProvider('${provider.name}')"
                                     ${!provider.configured ? 'disabled' : ''}
                                 >
@@ -1310,11 +1318,34 @@
                                 </button>
                                 <button 
                                     class="refresh-btn" 
-                                    style="flex: 1; font-size: 13px; padding: 8px 12px; background: var(--accent-dim); color: var(--accent);"
                                     onclick="monitor.viewProviderModels('${provider.name}')"
                                     ${!provider.configured ? 'disabled' : ''}
                                 >
                                     📋 Моделі
+                                </button>
+                            </div>
+                            
+                            <!-- Token management -->
+                            <div style="display: flex; gap: 8px; margin-top: 8px;">
+                                <button 
+                                    class="refresh-btn" 
+                                    style="flex: 1;"
+                                    onclick="monitor.manageProviderTokens('${provider.name}')"
+                                >
+                                    🔑 Токени
+                                </button>
+                                <button 
+                                    class="refresh-btn" 
+                                    onclick="monitor.rotateProviderToken('${provider.name}')"
+                                    ${!provider.configured ? 'disabled' : ''}
+                                >
+                                    🔄 Ротація
+                                </button>
+                                <button 
+                                    class="refresh-btn" 
+                                    onclick="monitor.configureProvider('${provider.name}')"
+                                >
+                                    ⚙️ Налаштування
                                 </button>
                             </div>
                         </div>
@@ -1322,7 +1353,7 @@
                 }).join('');
 
                 container.innerHTML = `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 16px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)); gap: 16px;">
                         ${html}
                     </div>
                 `;
@@ -1396,6 +1427,145 @@
                 }
             }
             
+            async toggleProvider(providerName) {
+                try {
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/toggle`, {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(`✅ Провайдер ${providerName} ${data.enabled ? 'увімкнено' : 'вимкнено'}!`);
+                        await this.loadProviders();
+                        // Оновлюємо список моделей після зміни статусу провайдера
+                        await this.loadModels();
+                    } else {
+                        alert(`❌ Помилка: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error toggling provider:', error);
+                    alert(`❌ Помилка: ${error.message}`);
+                }
+            }
+            
+            async manageProviderTokens(providerName) {
+                try {
+                    // Get current tokens
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/tokens`);
+                    const data = await response.json();
+                    
+                    if (!data.success) {
+                        alert(`❌ Помилка: ${data.error || 'Провайдер не підтримує токени'}`);
+                        return;
+                    }
+                    
+                    const tokens = data.tokens || [];
+                    const tokensList = tokens.map((t, i) => 
+                        `${i + 1}. ${t.key || 'Token ' + (i+1)} - ${t.active ? '✅ Активний' : '⏸️'} (Запитів: ${t.requestCount || 0}, Помилок: ${t.errorCount || 0})`
+                    ).join('\n');
+                    
+                    const action = prompt(
+                        `🔑 Управління токенами ${providerName}\n\n` +
+                        `Поточні токени (${tokens.length}):\n${tokensList || 'Немає токенів'}\n\n` +
+                        `Дії:\n` +
+                        `1 - Додати новий токен\n` +
+                        `2 - Видалити токен\n` +
+                        `3 - Скасувати\n\n` +
+                        `Введіть номер дії:`
+                    );
+                    
+                    if (action === '1') {
+                        await this.addProviderToken(providerName);
+                    } else if (action === '2') {
+                        const tokenIndex = prompt('Введіть номер токена для видалення:');
+                        if (tokenIndex && !isNaN(tokenIndex)) {
+                            await this.removeProviderToken(providerName, parseInt(tokenIndex) - 1);
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error('Error managing tokens:', error);
+                    alert(`❌ Помилка: ${error.message}`);
+                }
+            }
+            
+            async addProviderToken(providerName) {
+                const token = prompt(`Введіть новий API токен для ${providerName}:`);
+                if (!token) return;
+                
+                try {
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/tokens/add`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ token })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(`✅ Токен додано! Всього токенів: ${data.total}`);
+                        await this.loadProviders();
+                        // Оновлюємо список моделей після додавання токена
+                        await this.loadModels();
+                    } else {
+                        alert(`❌ Помилка: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error adding token:', error);
+                    alert(`❌ Помилка додавання токена: ${error.message}`);
+                }
+            }
+            
+            async removeProviderToken(providerName, index) {
+                if (!confirm(`Видалити токен #${index + 1}?`)) return;
+                
+                try {
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/tokens/remove`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ index })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(`✅ Токен видалено! Залишилось: ${data.total}`);
+                        await this.loadProviders();
+                        // Оновлюємо список моделей після видалення токена
+                        await this.loadModels();
+                    } else {
+                        alert(`❌ Помилка: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error removing token:', error);
+                    alert(`❌ Помилка видалення токена: ${error.message}`);
+                }
+            }
+            
+            async rotateProviderToken(providerName) {
+                if (!confirm(`Здійснити ротацію токена для ${providerName}?`)) return;
+                
+                try {
+                    const response = await fetch(`/api/monitoring/providers/${providerName}/rotate-token`, {
+                        method: 'POST'
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert(`✅ Ротація виконана!\nПоточний токен: ${data.current_token || 'Не встановлено'}`);
+                        await this.loadProviders();
+                        // Оновлюємо список моделей після ротації токена
+                        await this.loadModels();
+                    } else {
+                        alert(`❌ Помилка: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('Error rotating token:', error);
+                    alert(`❌ Помилка ротації: ${error.message}`);
+                }
+            }
+            
             renderTokens(data) {
                 const grid = document.getElementById('tokensGrid');
                 
@@ -1450,16 +1620,52 @@
                     grouped[provider].push(model);
                 });
                 
+                // Update model filter dropdown with all available models
+                this.updateModelFilterDropdown(models);
+                
                 body.innerHTML = Object.keys(grouped).sort().map(provider => {
-                    return grouped[provider].map(model => `
+                    const providerModels = grouped[provider];
+                    const providerHeader = `
+                        <div class="table-row" style="background: var(--bg-tertiary); font-weight: 600; border-left: 3px solid var(--accent);">
+                            <div colspan="4" style="color: var(--accent);">🔌 ${provider} (${providerModels.length} моделей)</div>
+                        </div>
+                    `;
+                    
+                    const modelRows = providerModels.map(model => `
                         <div class="table-row">
                             <div>${model.id}</div>
-                            <div>-</div>
-                            <div>-</div>
+                            <div>${model.context_window || '-'}</div>
+                            <div>${model.created ? new Date(model.created * 1000).toLocaleDateString('uk-UA') : '-'}</div>
                             <div style="color: var(--success)">✅ Ready</div>
                         </div>
                     `).join('');
+                    
+                    return providerHeader + modelRows;
                 }).join('');
+            }
+            
+            updateModelFilterDropdown(models) {
+                const modelSelect = document.getElementById('modelFilter');
+                const currentValue = modelSelect.value;
+                
+                // Clear and add "All" option
+                modelSelect.innerHTML = '<option value="all">Всі моделі</option>';
+                
+                // Add all models
+                models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.id;
+                    modelSelect.appendChild(option);
+                });
+                
+                // Restore previous selection if it still exists
+                if (currentValue !== 'all') {
+                    const optionExists = Array.from(modelSelect.options).some(opt => opt.value === currentValue);
+                    if (optionExists) {
+                        modelSelect.value = currentValue;
+                    }
+                }
             }
             
             async loadLogs() {
@@ -1470,14 +1676,15 @@
                     if (data.logs && data.logs.length > 0) {
                         // Add new logs that we don't have yet
                         data.logs.forEach(log => {
-                            // Check if log already exists (by timestamp and message)
-                            const exists = this.logs.some(l => 
-                                l.timestamp.getTime() === new Date(log.timestamp).getTime() &&
-                                l.message === log.message
-                            );
+                            // Create unique ID from log properties
+                            const logId = `${log.timestamp}-${log.method}-${log.endpoint}-${log.model}-${log.statusCode}`;
+                            
+                            // Check if log already exists by unique ID
+                            const exists = this.logs.some(l => l.id === logId);
                             
                             if (!exists) {
                                 this.addLog({
+                                    id: logId,
                                     type: log.type || 'success',
                                     method: log.method || 'GET',
                                     endpoint: log.endpoint || '/',
@@ -1485,6 +1692,7 @@
                                     source: log.source || '0.0.0.0',
                                     message: log.message || '',
                                     duration: log.duration || null,
+                                    statusCode: log.statusCode || 200,
                                     timestamp: new Date(log.timestamp)
                                 });
                             }

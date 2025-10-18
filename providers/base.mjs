@@ -138,6 +138,32 @@ export class Provider {
     this.enabled = config.enabled !== false;
     this.modelPrefix = config.modelPrefix || `ext-${this.name}-`;
     this.model = config.model || null;
+    
+    // Token rotation support
+    // Parse comma-separated tokens from apiKey if provided
+    let tokensArray = config.tokens;
+    if (!tokensArray && this.apiKey) {
+      // Split by comma to support multiple tokens
+      const tokenKeys = this.apiKey.split(',').map(t => t.trim()).filter(t => t);
+      tokensArray = tokenKeys.map(key => ({
+        key: key,
+        requestCount: 0,
+        errorCount: 0,
+        active: false,
+        lastUsed: null
+      }));
+      // Set first token as active
+      if (tokensArray.length > 0) {
+        tokensArray[0].active = true;
+        this.apiKey = tokensArray[0].key; // Set first token as current
+      }
+    }
+    
+    this.tokens = tokensArray || [];
+    this.currentTokenIndex = 0;
+    this.requestCount = 0;
+    this.rotationInterval = config.rotationInterval || 10; // Rotate every 10 requests by default
+    this.autoRotateOnError = config.autoRotateOnError !== false; // Auto-rotate on errors by default
   }
 
   /**
@@ -341,6 +367,161 @@ export class Provider {
       throw ProviderError.authError(`Missing required environment variable: ${key}`);
     }
     return value;
+  }
+  
+  // ========== TOKEN ROTATION METHODS ==========
+  
+  /**
+   * Get current active token
+   * @returns {string|null} Current token or null
+   */
+  getCurrentToken() {
+    if (this.tokens.length === 0) return null;
+    const token = this.tokens[this.currentTokenIndex];
+    return token ? token.key : null;
+  }
+  
+  /**
+   * Add a new token to the rotation pool
+   * @param {string} tokenKey - Token to add
+   */
+  addToken(tokenKey) {
+    if (!tokenKey) return;
+    
+    // Check if token already exists
+    const exists = this.tokens.some(t => t.key === tokenKey);
+    if (exists) {
+      console.log(`[${this.name}] Token already exists`);
+      return;
+    }
+    
+    this.tokens.push({
+      key: tokenKey,
+      requestCount: 0,
+      errorCount: 0,
+      active: true,
+      lastUsed: null
+    });
+    
+    console.log(`[${this.name}] Token added, total: ${this.tokens.length}`);
+    
+    // Update apiKey if this is the first token
+    if (this.tokens.length === 1) {
+      this.apiKey = tokenKey;
+    }
+  }
+  
+  /**
+   * Remove token by index
+   * @param {number} index - Index of token to remove
+   */
+  removeToken(index) {
+    if (index < 0 || index >= this.tokens.length) {
+      throw new Error('Invalid token index');
+    }
+    
+    this.tokens.splice(index, 1);
+    console.log(`[${this.name}] Token removed, remaining: ${this.tokens.length}`);
+    
+    // Adjust current index if needed
+    if (this.currentTokenIndex >= this.tokens.length) {
+      this.currentTokenIndex = 0;
+    }
+    
+    // Update apiKey
+    if (this.tokens.length > 0) {
+      this.apiKey = this.tokens[this.currentTokenIndex].key;
+    } else {
+      this.apiKey = '';
+    }
+  }
+  
+  /**
+   * Rotate to next token in pool
+   * @returns {string|null} New current token
+   */
+  rotateToken() {
+    if (this.tokens.length <= 1) {
+      console.log(`[${this.name}] Cannot rotate, only ${this.tokens.length} token(s)`);
+      return this.getCurrentToken();
+    }
+    
+    // Move to next token
+    this.currentTokenIndex = (this.currentTokenIndex + 1) % this.tokens.length;
+    const newToken = this.tokens[this.currentTokenIndex];
+    
+    if (newToken) {
+      this.apiKey = newToken.key;
+      newToken.active = true;
+      newToken.lastUsed = new Date();
+      console.log(`[${this.name}] Token rotated to index ${this.currentTokenIndex}`);
+    }
+    
+    return this.getCurrentToken();
+  }
+  
+  /**
+   * Get token statistics
+   * @returns {Array} Array of token stats
+   */
+  getTokenStats() {
+    return this.tokens.map((token, index) => ({
+      key: token.key.substring(0, 8) + '...' + token.key.substring(token.key.length - 4),
+      requestCount: token.requestCount || 0,
+      errorCount: token.errorCount || 0,
+      active: index === this.currentTokenIndex,
+      lastUsed: token.lastUsed
+    }));
+  }
+  
+  /**
+   * Track request and auto-rotate if needed
+   * @param {boolean} isError - Whether this request resulted in an error
+   */
+  trackRequest(isError = false) {
+    if (this.tokens.length === 0) return;
+    
+    const currentToken = this.tokens[this.currentTokenIndex];
+    if (currentToken) {
+      currentToken.requestCount = (currentToken.requestCount || 0) + 1;
+      currentToken.lastUsed = new Date();
+      
+      if (isError) {
+        currentToken.errorCount = (currentToken.errorCount || 0) + 1;
+        
+        // Auto-rotate on error if enabled and multiple tokens available
+        if (this.autoRotateOnError && this.tokens.length > 1) {
+          console.log(`[${this.name}] Error detected, auto-rotating token...`);
+          this.rotateToken();
+          return;
+        }
+      }
+    }
+    
+    // Increment global request count
+    this.requestCount++;
+    
+    // Check if rotation interval reached
+    if (this.tokens.length > 1 && this.requestCount % this.rotationInterval === 0) {
+      console.log(`[${this.name}] Rotation interval (${this.rotationInterval}) reached, rotating token...`);
+      this.rotateToken();
+    }
+  }
+  
+  /**
+   * Wrap API call with request tracking
+   * @param {Function} apiCall - Async function to call
+   * @returns {Promise} Result of API call
+   */
+  async withRequestTracking(apiCall) {
+    try {
+      const result = await apiCall();
+      this.trackRequest(false); // Success
+      return result;
+    } catch (error) {
+      this.trackRequest(true); // Error
+      throw error;
+    }
   }
 }
 

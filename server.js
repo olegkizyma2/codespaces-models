@@ -152,22 +152,53 @@ app.get('/api/monitoring/logs', (req, res) => {
   }
 });
 
-// Список моделей (локальний, без GitHub API)
-app.get('/api/monitoring/models', (req, res) => {
+// Список моделей (динамічний, з провайдерів)
+app.get('/api/monitoring/models', async (req, res) => {
   try {
-    const models = [
-      { id: "ai21-labs/ai21-jamba-1.5-large", object: "model", owned_by: "ai21-labs" },
-      { id: "ai21-labs/ai21-jamba-1.5-mini", object: "model", owned_by: "ai21-labs" },
-      { id: "cohere/cohere-command-r", object: "model", owned_by: "cohere" },
-      { id: "cohere/cohere-command-r-plus", object: "model", owned_by: "cohere" },
-      { id: "openai/gpt-4o", object: "model", owned_by: "openai" },
-      { id: "openai/gpt-4o-mini", object: "model", owned_by: "openai" },
-      { id: "meta/llama-3.3-70b-instruct", object: "model", owned_by: "meta" },
-      { id: "microsoft/phi-3.5-mini-instruct", object: "model", owned_by: "microsoft" },
-      { id: "microsoft/phi-4", object: "model", owned_by: "microsoft" }
-    ];
-    res.json({ object: "list", data: models });
+    console.log('[MONITORING] Models list request');
+    
+    // Отримуємо всі моделі від провайдерів
+    let allModels = [];
+    try {
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 3000)
+      );
+      
+      allModels = await Promise.race([
+        providerRegistry.getAllModels(),
+        timeoutPromise
+      ]);
+      
+      console.log(`[MONITORING] Отримано ${allModels.length} моделей з провайдерів`);
+    } catch (error) {
+      if (error.message === 'Timeout') {
+        console.warn('[MONITORING] Timeout при отриманні моделей від провайдерів');
+      } else {
+        console.error('[MONITORING] Помилка отримання моделей:', error.message);
+      }
+      allModels = [];
+    }
+    
+    // Додаємо інформацію про провайдери
+    const modelsWithProviders = allModels.map(m => ({
+      id: m.id,
+      object: m.object || 'model',
+      created: m.created || Math.floor(Date.now() / 1000),
+      owned_by: m.owned_by || (m.id.split('/')[0] || 'unknown'),
+      provider: m.provider || 'unknown',
+      context_window: m.context_window || null
+    }));
+    
+    res.json({ 
+      object: 'list', 
+      data: modelsWithProviders,
+      meta: {
+        total: modelsWithProviders.length,
+        timestamp: new Date().toISOString()
+      }
+    });
   } catch (error) {
+    console.error('[MONITORING] Error in models endpoint:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -452,6 +483,205 @@ app.post('/api/monitoring/providers/:name/rotate-token', (req, res) => {
     });
   } catch (error) {
     console.error(`[PROVIDERS] Error rotating token for ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Toggle provider enabled/disabled
+app.post('/api/monitoring/providers/:name/toggle', (req, res) => {
+  try {
+    const { name } = req.params;
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    // Toggle the enabled state
+    provider.enabled = !provider.enabled;
+    
+    console.log(`[PROVIDERS] Provider ${name} ${provider.enabled ? 'enabled' : 'disabled'}`);
+    
+    res.json({
+      success: true,
+      provider: name,
+      enabled: provider.enabled,
+      message: `Provider ${provider.enabled ? 'enabled' : 'disabled'} successfully`
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error toggling provider ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get provider tokens
+app.get('/api/monitoring/providers/:name/tokens', (req, res) => {
+  try {
+    const { name } = req.params;
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    // Check if provider supports token management
+    if (typeof provider.getTokenStats !== 'function') {
+      return res.json({
+        success: false,
+        error: 'Provider does not support token management'
+      });
+    }
+    
+    const tokens = provider.getTokenStats();
+    
+    res.json({
+      success: true,
+      provider: name,
+      tokens: tokens,
+      total: tokens.length
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error getting tokens for ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add provider token
+app.post('/api/monitoring/providers/:name/tokens/add', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { token } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Token is required' 
+      });
+    }
+    
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    // Check if provider supports adding tokens
+    if (typeof provider.addToken !== 'function') {
+      return res.json({
+        success: false,
+        error: 'Provider does not support adding tokens'
+      });
+    }
+    
+    provider.addToken(token);
+    const tokens = provider.getTokenStats ? provider.getTokenStats() : [];
+    
+    console.log(`[PROVIDERS] Token added to ${name}, total: ${tokens.length}`);
+    
+    // Save tokens to .env file
+    try {
+      const envPrefix = providerConfig.getEnvPrefix(name);
+      const allTokens = provider.tokens.map(t => t.key).join(',');
+      const config = {
+        apiKey: allTokens,
+        enabled: provider.enabled
+      };
+      
+      if (provider.baseURL) {
+        config.baseURL = provider.baseURL;
+      }
+      
+      await providerConfig.updateProviderConfig(name, config);
+      console.log(`[PROVIDERS] Tokens saved to .env for ${name}`);
+    } catch (envError) {
+      console.error(`[PROVIDERS] Failed to save to .env:`, envError);
+      // Continue anyway - token is in memory
+    }
+    
+    res.json({
+      success: true,
+      provider: name,
+      total: tokens.length,
+      message: 'Token added successfully'
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error adding token to ${name}:`, error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Remove provider token
+app.post('/api/monitoring/providers/:name/tokens/remove', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { index } = req.body;
+    
+    if (index === undefined || index === null) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Token index is required' 
+      });
+    }
+    
+    const provider = providerRegistry.get(name);
+    
+    if (!provider) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Provider not found' 
+      });
+    }
+    
+    // Check if provider supports removing tokens
+    if (typeof provider.removeToken !== 'function') {
+      return res.json({
+        success: false,
+        error: 'Provider does not support removing tokens'
+      });
+    }
+    
+    provider.removeToken(index);
+    const tokens = provider.getTokenStats ? provider.getTokenStats() : [];
+    
+    console.log(`[PROVIDERS] Token removed from ${name}, remaining: ${tokens.length}`);
+    
+    // Save updated tokens to .env file
+    try {
+      const envPrefix = providerConfig.getEnvPrefix(name);
+      const allTokens = provider.tokens.map(t => t.key).join(',');
+      const config = {
+        apiKey: allTokens || '',
+        enabled: provider.enabled
+      };
+      
+      if (provider.baseURL) {
+        config.baseURL = provider.baseURL;
+      }
+      
+      await providerConfig.updateProviderConfig(name, config);
+      console.log(`[PROVIDERS] Tokens updated in .env for ${name}`);
+    } catch (envError) {
+      console.error(`[PROVIDERS] Failed to update .env:`, envError);
+      // Continue anyway - token is removed from memory
+    }
+    
+    res.json({
+      success: true,
+      provider: name,
+      total: tokens.length,
+      message: 'Token removed successfully'
+    });
+  } catch (error) {
+    console.error(`[PROVIDERS] Error removing token from ${name}:`, error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
