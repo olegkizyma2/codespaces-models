@@ -113,7 +113,9 @@ function addRequestLog(logEntry) {
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Збільшуємо ліміт для запитів з зображеннями (base64 encoded images)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // ===== МОНІТОРИНГОВІ ENDPOINT'И (БЕЗ RATE LIMITING) =====
 // Ці endpoint'и не логуються і не проходять через rate limiter
@@ -2090,7 +2092,34 @@ function getClient(req) {
     console.warn('[WARN] No API key provided; using empty key. Set OPENAI_API_KEY/GITHUB_TOKEN or send Authorization header.');
   }
   const baseURL = getBaseUrlFromRequest(req);
-  return new OpenAI({ apiKey, baseURL });
+  
+  // Prepare default headers
+  const defaultHeaders = {};
+  
+  // CRITICAL: Forward Copilot-Vision-Request header if present
+  if (req.headers['copilot-vision-request']) {
+    defaultHeaders['Copilot-Vision-Request'] = req.headers['copilot-vision-request'];
+    console.log('[COPILOT-VISION] Forwarding Copilot-Vision-Request header to upstream API');
+  }
+  
+  // Auto-detect vision requests for GitHub Copilot models
+  const model = req.body?.model;
+  const messages = req.body?.messages;
+  if (model && model.includes('copilot') && messages) {
+    const hasImageContent = messages.some(m => 
+      Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
+    );
+    if (hasImageContent && !defaultHeaders['Copilot-Vision-Request']) {
+      defaultHeaders['Copilot-Vision-Request'] = 'true';
+      console.log('[COPILOT-VISION] Auto-adding Copilot-Vision-Request header for vision content');
+    }
+  }
+  
+  return new OpenAI({ 
+    apiKey, 
+    baseURL,
+    defaultHeaders 
+  });
 }
 
 // Initialize limits handler

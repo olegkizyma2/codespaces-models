@@ -468,14 +468,27 @@ export class GitHubCopilotProvider extends Provider {
       ...rest
     };
 
+    // Check if this is a vision request
+    const hasImageContent = messages?.some(m => 
+      Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
+    );
+
+    const headers = {
+      ...this.getGitHubHeaders(),
+      'Authorization': `Bearer ${token}`,
+      'Copilot-Integration-Id': 'vscode-chat'
+    };
+
+    // CRITICAL: Add Copilot-Vision-Request header for vision requests
+    if (hasImageContent) {
+      headers['Copilot-Vision-Request'] = 'true';
+      console.log('[GITHUB-COPILOT] Adding Copilot-Vision-Request header for vision content');
+    }
+
     try {
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
-        headers: {
-          ...this.getGitHubHeaders(),
-          'Authorization': `Bearer ${token}`,
-          'Copilot-Integration-Id': 'vscode-chat'
-        },
+        headers,
         body: JSON.stringify(requestBody)
       });
 
@@ -513,14 +526,27 @@ export class GitHubCopilotProvider extends Provider {
       ...rest
     };
 
+    // Check if this is a vision request
+    const hasImageContent = messages?.some(m => 
+      Array.isArray(m.content) && m.content.some(c => c.type === 'image_url')
+    );
+
+    const headers = {
+      ...this.getGitHubHeaders(),
+      'Authorization': `Bearer ${token}`,
+      'Copilot-Integration-Id': 'vscode-chat'
+    };
+
+    // CRITICAL: Add Copilot-Vision-Request header for vision requests
+    if (hasImageContent) {
+      headers['Copilot-Vision-Request'] = 'true';
+      console.log('[GITHUB-COPILOT] Adding Copilot-Vision-Request header for vision streaming');
+    }
+
     try {
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
-        headers: {
-          ...this.getGitHubHeaders(),
-          'Authorization': `Bearer ${token}`,
-          'Copilot-Integration-Id': 'vscode-chat'
-        },
+        headers,
         body: JSON.stringify(requestBody)
       });
 
