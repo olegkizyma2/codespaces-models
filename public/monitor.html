@@ -71,10 +71,10 @@
         
         .refresh-btn {
             padding: 8px 16px;
-            background: var(--accent);
-            border: none;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            color: var(--bg-primary);
+            color: var(--text-primary);
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
@@ -82,8 +82,19 @@
         }
         
         .refresh-btn:hover {
-            background: var(--accent-hover);
-            transform: scale(1.05);
+            background: var(--bg-hover);
+            border-color: var(--accent);
+            color: var(--accent);
+            transform: translateY(-1px);
+        }
+        
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+        
+        .refresh-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         
         /* Tabs */
@@ -292,7 +303,7 @@
         
         .filter-btn {
             padding: 6px 12px;
-            background: transparent;
+            background: var(--bg-tertiary);
             border: 1px solid var(--border);
             border-radius: 6px;
             color: var(--text-secondary);
@@ -302,14 +313,15 @@
         }
         
         .filter-btn:hover {
+            background: var(--bg-hover);
             border-color: var(--accent);
             color: var(--accent);
         }
         
         .filter-btn.active {
-            background: var(--accent);
+            background: var(--accent-dim);
             border-color: var(--accent);
-            color: var(--bg-primary);
+            color: var(--accent);
         }
         
         /* Filter dropdowns */
@@ -361,6 +373,24 @@
             font-family: 'SF Mono', Consolas, monospace;
             font-size: 13px;
             animation: slideIn 0.3s ease;
+            transition: all 0.2s;
+        }
+        
+        .log-entry:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent);
+        }
+        
+        /* Compact mode */
+        .log-entry.compact {
+            padding: 8px 12px;
+            margin-bottom: 4px;
+            font-size: 12px;
+        }
+        
+        .log-entry.compact .log-source,
+        .log-entry.compact .log-details {
+            display: none;
         }
         
         @keyframes slideIn {
@@ -646,8 +676,8 @@
             <div class="logo">ATLAS</div>
             <div class="header-title">📊 Моніторинг та Аналітика</div>
             <button class="refresh-btn" id="refreshBtn">🔄 Оновити</button>
-            <button class="refresh-btn" id="rotateTokenBtn" style="background: var(--warning); margin-left: 8px;">🔑 Змінити токен</button>
-            <button class="refresh-btn" id="restartBtn" style="background: var(--error); margin-left: 8px;">🔄 Перезапуск</button>
+            <button class="refresh-btn" id="rotateTokenBtn" style="border-color: var(--warning); color: var(--warning);">🔑 Змінити токен</button>
+            <button class="refresh-btn" id="restartBtn" style="border-color: var(--error); color: var(--error);">🔄 Перезапуск</button>
         </div>
         
         <div class="tabs">
@@ -798,6 +828,9 @@
                     <div class="logs-header">
                         <h3>🔍 Живі логи запитів</h3>
                         <div class="logs-filter">
+                            <button class="filter-btn" data-filter-type="view" data-filter="compact">📋 Компактний</button>
+                            <button class="filter-btn active" data-filter-type="view" data-filter="detailed">📊 Детальний</button>
+                            <span style="width: 16px;"></span>
                             <button class="filter-btn active" data-filter-type="status" data-filter="all">Всі</button>
                             <button class="filter-btn" data-filter-type="status" data-filter="success">✅ Успішні</button>
                             <button class="filter-btn" data-filter-type="status" data-filter="error">❌ Помилки</button>
@@ -900,6 +933,7 @@
                     model: 'all',
                     source: 'all'
                 };
+                this.logViewMode = 'detailed'; // 'detailed' or 'compact'
                 this.availableModels = new Set();
                 this.availableSources = new Set();
                 this.requestsChart = null;
@@ -993,6 +1027,16 @@
                         btn.disabled = false;
                         btn.textContent = '🔄 Перезапуск';
                     }
+                });
+                
+                // View mode filter buttons
+                document.querySelectorAll('.filter-btn[data-filter-type="view"]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        document.querySelectorAll('.filter-btn[data-filter-type="view"]').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        this.logViewMode = btn.dataset.filter;
+                        this.renderLogs();
+                    });
                 });
                 
                 // Status filter buttons
@@ -1541,17 +1585,32 @@
                         `<span style="background: var(--accent-dim); color: var(--accent); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">🤖 ${log.model}</span>` : 
                         '';
                     
-                    return `
-                        <div class="log-entry ${log.type}">
-                            <div>
+                    const compactClass = this.logViewMode === 'compact' ? 'compact' : '';
+                    
+                    if (this.logViewMode === 'compact') {
+                        // Compact mode - single line
+                        return `
+                            <div class="log-entry ${log.type} ${compactClass}">
                                 <span class="log-time">${time}</span>
                                 <span class="log-type ${log.method.toLowerCase()}">${methodIcon} ${log.method}</span>
-                                <span class="log-message">${log.endpoint} ${statusIcon} ${log.message}</span>
+                                <span class="log-message">${log.endpoint} ${statusIcon}</span>
                                 ${modelBadge}
                             </div>
-                            <div class="log-source">📍 ${log.source} ${log.duration ? `| ⚡ ${log.duration}ms` : ''}</div>
-                        </div>
-                    `;
+                        `;
+                    } else {
+                        // Detailed mode - multi-line with extra info
+                        return `
+                            <div class="log-entry ${log.type} ${compactClass}">
+                                <div>
+                                    <span class="log-time">${time}</span>
+                                    <span class="log-type ${log.method.toLowerCase()}">${methodIcon} ${log.method}</span>
+                                    <span class="log-message">${log.endpoint} ${statusIcon} ${log.message}</span>
+                                    ${modelBadge}
+                                </div>
+                                <div class="log-source log-details">📍 ${log.source} ${log.duration ? `| ⚡ ${log.duration}ms` : ''}</div>
+                            </div>
+                        `;
+                    }
                 }).join('');
             }
             

@@ -160,7 +160,7 @@ class AIChat {
 
         if (role === 'system') {
             messageDiv.innerHTML = `
-                <div class="message-content" style="background: #ffc107; color: #000; text-align: center; font-style: italic;">
+                <div class="message-content" style="background: var(--accent-dim); border: 1px solid var(--accent); color: var(--accent); text-align: center; font-style: italic;">
                     ${content}
                 </div>
             `;
@@ -169,7 +169,7 @@ class AIChat {
             let usageInfo = '';
             
             if (usage) {
-                usageInfo = `<div style="font-size: 11px; color: #666; margin-top: 8px; opacity: 0.8;">
+                usageInfo = `<div style="font-size: 11px; color: var(--text-muted); margin-top: 8px; opacity: 0.8;">
                     📊 Токени: ${usage.total_tokens} (${usage.prompt_tokens}+${usage.completion_tokens})
                 </div>`;
             }
@@ -178,13 +178,17 @@ class AIChat {
             let ttsButton = '';
             if (role === 'assistant') {
                 ttsButton = `
-                    <div style="margin-top: 10px; display: flex; gap: 10px; align-items: center;">
+                    <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center;">
                         <button onclick="playTTS('${this.escapeForTTS(content)}', 'anatol')" 
-                                style="padding: 5px 12px; background: #4facfe; color: white; border: none; border-radius: 15px; cursor: pointer; font-size: 12px;">
+                                style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s;" 
+                                onmouseover="this.style.borderColor='var(--accent)'; this.style.color='var(--accent)';" 
+                                onmouseout="this.style.borderColor='rgba(255,255,255,0.08)'; this.style.color='#e8e8e8';">
                             🔊 Анатоль
                         </button>
                         <button onclick="playTTS('${this.escapeForTTS(content)}', 'natalia')" 
-                                style="padding: 5px 12px; background: #ff6b9d; color: white; border: none; border-radius: 15px; cursor: pointer; font-size: 12px;">
+                                style="padding: 6px 12px; background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; transition: all 0.2s;" 
+                                onmouseover="this.style.borderColor='var(--accent)'; this.style.color='var(--accent)';" 
+                                onmouseout="this.style.borderColor='rgba(255,255,255,0.08)'; this.style.color='#e8e8e8';">
                             🎤 Наталя
                         </button>
                     </div>
@@ -215,7 +219,7 @@ class AIChat {
             .replace(/\n/g, '<br>')
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/`(.*?)`/g, '<code style="background: #f5f5f5; padding: 2px 4px; border-radius: 3px;">$1</code>');
+            .replace(/`(.*?)`/g, '<code style="background: var(--bg-tertiary); color: var(--accent); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border);">$1</code>');
     }
 
     showTypingIndicator() {
